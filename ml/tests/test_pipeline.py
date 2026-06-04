@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 import sys
+import tempfile
 from pathlib import Path
 import unittest
 
@@ -9,7 +11,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from ml_service import InteractionEvent, LearningMLPipeline
 from ml_service.api import app
-from ml_service.content_generator import ContentGenerator
+from ml_service.content_generator import ContentGenerator, load_dotenv_if_present
 from ml_service.data import DEFAULT_RESOURCES
 from ml_service.profiler import StudentProfiler
 from ml_service.rag import ResourceRetriever
@@ -162,6 +164,36 @@ class RagAndGenerationTest(unittest.TestCase):
 
         self.assertEqual(card["generation_meta"]["provider"], "template")
         self.assertIn("fallback_reason", card["generation_meta"])
+
+    def test_dotenv_loader_reads_local_config_without_overriding_env(self) -> None:
+        old_cwd = Path.cwd()
+        original_key = os.environ.get("DASHSCOPE_API_KEY")
+        original_model = os.environ.get("QWEN_MODEL")
+        try:
+            os.environ["DASHSCOPE_API_KEY"] = "already-set"
+            os.environ.pop("QWEN_MODEL", None)
+            with tempfile.TemporaryDirectory() as temp_dir:
+                temp_path = Path(temp_dir)
+                (temp_path / ".env").write_text(
+                    "DASHSCOPE_API_KEY=from-file\nQWEN_MODEL=qwen-max\n",
+                    encoding="utf-8",
+                )
+                os.chdir(temp_path)
+                load_dotenv_if_present()
+                os.chdir(old_cwd)
+
+            self.assertEqual(os.environ["DASHSCOPE_API_KEY"], "already-set")
+            self.assertEqual(os.environ["QWEN_MODEL"], "qwen-max")
+        finally:
+            os.chdir(old_cwd)
+            if original_key is None:
+                os.environ.pop("DASHSCOPE_API_KEY", None)
+            else:
+                os.environ["DASHSCOPE_API_KEY"] = original_key
+            if original_model is None:
+                os.environ.pop("QWEN_MODEL", None)
+            else:
+                os.environ["QWEN_MODEL"] = original_model
 
 
 @unittest.skipIf(TestClient is None, "FastAPI test client is not installed")

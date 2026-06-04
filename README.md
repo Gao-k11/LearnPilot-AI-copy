@@ -141,11 +141,11 @@ python ml/scripts/evaluate.py
 uvicorn ml_service.api:app --app-dir ml/src --reload --port 8000
 ```
 
-启用 Qwen-Max 真实生成前，请在本机设置环境变量。未设置时系统会自动使用模板生成，测试和离线演示不受影响。
+启用 Qwen-Max 真实生成前，请复制 `.env.example` 为 `.env` 或 `ml/.env`，再填入自己的 DashScope API Key。未配置 `.env` 时系统会自动使用模板生成，测试和离线演示不受影响。
 
 ```powershell
-$env:DASHSCOPE_API_KEY="你的 DashScope API Key"
-$env:QWEN_MODEL="qwen-max"
+Copy-Item .env.example .env
+# 编辑 .env，填入 DASHSCOPE_API_KEY
 python ml/scripts/qwen_smoke_test.py
 ```
 

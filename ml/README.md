@@ -42,11 +42,11 @@ pip install -r ml/requirements.txt
 uvicorn ml_service.api:app --app-dir ml/src --reload --port 8000
 ```
 
-如需启用 Qwen-Max 真实生成，请先设置环境变量。未设置密钥时，系统会自动使用模板生成，便于离线演示和测试。
+如需启用 Qwen-Max 真实生成，请复制 `.env.example` 为根目录 `.env` 或 `ml/.env`，再填入自己的 DashScope API Key。未配置 `.env` 时，系统会自动使用模板生成，便于离线演示和测试。
 
 ```powershell
-$env:DASHSCOPE_API_KEY="你的 DashScope API Key"
-$env:QWEN_MODEL="qwen-max"
+Copy-Item .env.example .env
+# 编辑 .env，填入 DASHSCOPE_API_KEY
 python ml/scripts/qwen_smoke_test.py
 ```
 

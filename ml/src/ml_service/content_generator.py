@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Protocol
 from urllib import error, request
 
@@ -19,6 +20,28 @@ class TemplateLLMClient:
         return prompt
 
 
+def load_dotenv_if_present() -> None:
+    """Load local .env files without overriding already exported environment variables."""
+    candidates = [
+        Path.cwd() / "ml" / ".env",
+        Path.cwd() / ".env",
+        Path(__file__).resolve().parents[2] / ".env",
+        Path(__file__).resolve().parents[3] / ".env",
+    ]
+    for path in candidates:
+        if not path.exists():
+            continue
+        for line in path.read_text(encoding="utf-8").splitlines():
+            item = line.strip()
+            if not item or item.startswith("#") or "=" not in item:
+                continue
+            key, value = item.split("=", 1)
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            if key and key not in os.environ:
+                os.environ[key] = value
+
+
 @dataclass(frozen=True)
 class QwenMaxClient:
     api_key: str | None = None
@@ -28,6 +51,7 @@ class QwenMaxClient:
 
     @classmethod
     def from_env(cls) -> "QwenMaxClient | None":
+        load_dotenv_if_present()
         api_key = os.getenv("DASHSCOPE_API_KEY") or os.getenv("QWEN_API_KEY")
         if not api_key:
             return None
