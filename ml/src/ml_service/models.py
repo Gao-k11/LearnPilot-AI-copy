@@ -28,6 +28,7 @@ class LearningResource:
     estimated_minutes: int
     quality: float = 0.8
     url: str | None = None
+    content: str = ""
 
 
 @dataclass(frozen=True)
@@ -45,6 +46,13 @@ class StudentProfile:
     preferred_styles: list[LearningStyle] = field(default_factory=list)
     target_difficulty: float = 0.5
     risk_level: Literal["low", "medium", "high"] = "medium"
+    weak_points: list[str] = field(default_factory=list)
+    recent_focus: list[str] = field(default_factory=list)
+    learning_velocity: float = 0.5
+    engagement_score: float = 0.5
+    stability_score: float = 0.5
+    preference_confidence: float = 0.0
+    forgetting_risk: float = 0.5
 
 
 @dataclass(frozen=True)

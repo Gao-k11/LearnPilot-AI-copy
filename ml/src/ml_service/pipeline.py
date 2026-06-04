@@ -32,6 +32,7 @@ class LearningMLPipeline:
         events: list[InteractionEvent] | None = None,
         goals: list[str] | None = None,
         preferred_styles: list[str] | None = None,
+        previous_mastery: dict[str, float] | None = None,
         top_k: int = 6,
     ) -> dict:
         normalized_diagnostics, diagnosis_trace = self.diagnosis_agent.analyze(diagnostics)
@@ -41,6 +42,7 @@ class LearningMLPipeline:
             events=events,
             goals=goals,
             preferred_styles=preferred_styles,
+            previous_mastery=previous_mastery,
         )
         recommendations, recommendation_trace = self.recommendation_agent.recommend(profile, self.resources, top_k=top_k)
         path, planning_trace = self.planning_agent.plan(profile, self.knowledge_graph, self.resources)
@@ -54,6 +56,13 @@ class LearningMLPipeline:
                 "preferred_styles": profile.preferred_styles,
                 "target_difficulty": profile.target_difficulty,
                 "risk_level": profile.risk_level,
+                "weak_points": profile.weak_points,
+                "recent_focus": profile.recent_focus,
+                "learning_velocity": profile.learning_velocity,
+                "engagement_score": profile.engagement_score,
+                "stability_score": profile.stability_score,
+                "preference_confidence": profile.preference_confidence,
+                "forgetting_risk": profile.forgetting_risk,
             },
             "recommendations": [
                 {
@@ -108,15 +117,24 @@ class LearningMLPipeline:
         feedback_events: list[InteractionEvent],
         goals: list[str] | None = None,
         preferred_styles: list[str] | None = None,
+        previous_mastery: dict[str, float] | None = None,
         top_k: int = 6,
     ) -> dict:
-        before = self.run_learning_loop(student_id, diagnostics, goals=goals, preferred_styles=preferred_styles, top_k=top_k)
+        before = self.run_learning_loop(
+            student_id,
+            diagnostics,
+            goals=goals,
+            preferred_styles=preferred_styles,
+            previous_mastery=previous_mastery,
+            top_k=top_k,
+        )
         after = self.run_learning_loop(
             student_id,
             diagnostics,
             events=feedback_events,
             goals=goals,
             preferred_styles=preferred_styles,
+            previous_mastery=before["profile"]["mastery"],
             top_k=top_k,
         )
         return {

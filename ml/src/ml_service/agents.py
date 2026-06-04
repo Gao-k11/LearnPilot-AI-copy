@@ -36,8 +36,9 @@ class ProfileAgent:
         events: list[InteractionEvent] | None,
         goals: list[str] | None,
         preferred_styles: list[str] | None,
+        previous_mastery: dict[str, float] | None = None,
     ) -> tuple[StudentProfile, AgentTrace]:
-        profile = self.profiler.build_profile(student_id, diagnostics, events, goals, preferred_styles)
+        profile = self.profiler.build_profile(student_id, diagnostics, events, goals, preferred_styles, previous_mastery)
         weakest = sorted(profile.mastery, key=profile.mastery.get)[:2]
         output = f"风险等级 {profile.risk_level}，优先关注 {'、'.join(weakest) if weakest else '目标知识点'}"
         return profile, AgentTrace("画像 Agent", "融合诊断、行为和偏好，维护学生画像", output)
@@ -89,13 +90,27 @@ class GenerationEvaluationAgent:
         covers_point = knowledge_point in joined
         has_practice = bool(card.get("practice"))
         has_review = bool(card.get("review_tip"))
-        score = round((0.5 if covers_point else 0.0) + (0.25 if has_practice else 0.0) + (0.25 if has_review else 0.0), 2)
+        has_answer = bool(card.get("answer"))
+        has_evidence = bool(card.get("rag_context"))
+        has_mistake_analysis = bool(card.get("mistake_analysis"))
+        score = round(
+            (0.3 if covers_point else 0.0)
+            + (0.2 if has_practice else 0.0)
+            + (0.15 if has_answer else 0.0)
+            + (0.15 if has_review else 0.0)
+            + (0.1 if has_evidence else 0.0)
+            + (0.1 if has_mistake_analysis else 0.0),
+            2,
+        )
         return {
             "passed": score >= 0.75,
             "score": score,
             "checks": {
                 "covers_knowledge_point": covers_point,
                 "has_practice": has_practice,
+                "has_answer": has_answer,
                 "has_review_tip": has_review,
+                "has_rag_evidence": has_evidence,
+                "has_mistake_analysis": has_mistake_analysis,
             },
         }
