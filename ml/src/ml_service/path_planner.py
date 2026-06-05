@@ -28,7 +28,7 @@ class LearningPathPlanner:
                     knowledge_point=point,
                     target_mastery=round(target, 2),
                     resources=tuple(recommendations),
-                    rationale=f"当前掌握度 {current:.2f}，优先补齐到 {target:.2f}",
+                    rationale=f"{self._stage_goal(current)}：当前掌握度 {current:.2f}，优先补齐到 {target:.2f}",
                 )
             )
 
@@ -58,3 +58,12 @@ class LearningPathPlanner:
             if profile.mastery.get(point, 0.5) < 0.75:
                 visit(point)
         return ordered
+
+    def _stage_goal(self, mastery: float) -> str:
+        if mastery < 0.45:
+            return "补基础"
+        if mastery < 0.65:
+            return "练专项"
+        if mastery < 0.78:
+            return "做综合"
+        return "项目迁移"

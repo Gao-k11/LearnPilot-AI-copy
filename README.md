@@ -25,7 +25,7 @@ LearnPilot-AI 是面向“中国软件杯”A3 赛题“基于大模型的个性
 | 学生画像 | 融合诊断、学习目标、偏好、行为日志和历史状态，生成动态画像 |
 | 资源推荐 | 根据薄弱点匹配、难度匹配、学习形式偏好、资源质量和时长进行排序 |
 | 路径规划 | 基于知识图谱和先修关系，生成从基础到综合应用的学习路径 |
-| RAG 内容生成 | 检索相关课程资源证据，调用 Qwen-Max 或模板 fallback 生成学习卡片 |
+| RAG 内容生成 | 检索相关课程资源证据，调用 qwen3.7-plus 或模板 fallback 生成学习卡片 |
 | 多智能体协作 | 输出诊断、画像、推荐、规划、生成与评估 Agent 的执行 trace |
 | 反馈闭环 | 根据学习反馈更新掌握度，展示反馈前后路径和画像变化 |
 | 离线评估 | 支持 Recall@K、NDCG@K 和掌握度提升示例评估 |
@@ -77,7 +77,7 @@ LearnPilot-AI 是面向“中国软件杯”A3 赛题“基于大模型的个性
 - 数据建模：dataclass + Pydantic
 - 推荐策略：可解释加权排序 + 多样性重排
 - 路径规划：知识图谱先修依赖 + 掌握度缺口排序
-- RAG 原型：资源内容切片 + BM25 风格检索 + Qwen-Max 生成 + 质量检查
+- RAG 原型：资源内容切片 + BM25/TF-IDF 融合检索 + qwen3.7-plus 生成 + 质量检查
 - 测试方式：unittest
 
 推荐排序当前采用如下可解释公式：
@@ -107,10 +107,23 @@ LearnPilot-AI/
 
 ## 快速开始
 
-### 1. 安装依赖
+### 1. 创建 conda 沙箱
 
 ```powershell
-pip install -r ml/requirements.txt
+conda env create -f environment.yml
+conda activate learnpilot-ai
+```
+
+如依赖变化，可更新环境：
+
+```powershell
+conda env update -f environment.yml --prune
+```
+
+可选安装高级排序依赖：
+
+```powershell
+pip install -r ml/requirements-advanced.txt
 ```
 
 ### 2. 运行单元测试
@@ -135,13 +148,22 @@ python ml/scripts/evaluate.py
 
 评估脚本会基于 `ml/data/sample_feedback.json` 输出 `Recall@5`、`NDCG@5`、推荐明细和掌握度提升示例。
 
+完整 ML 2.0 流程：
+
+```powershell
+python ml/scripts/generate_synthetic_data.py
+python ml/scripts/train_ranker.py
+python ml/scripts/evaluate.py
+python ml/scripts/demo.py
+```
+
 ### 5. 启动 API 服务
 
 ```powershell
 uvicorn ml_service.api:app --app-dir ml/src --reload --port 8000
 ```
 
-启用 Qwen-Max 真实生成前，请复制 `.env.example` 为 `.env` 或 `ml/.env`，再填入自己的 DashScope API Key。未配置 `.env` 时系统会自动使用模板生成，测试和离线演示不受影响。
+启用 qwen3.7-plus 真实生成前，请复制 `.env.example` 为 `.env` 或 `ml/.env`，再填入自己的 DashScope API Key。未配置 `.env` 时系统会自动使用模板生成，测试和离线演示不受影响。
 
 ```powershell
 Copy-Item .env.example .env
@@ -167,11 +189,14 @@ GET http://127.0.0.1:8000/health
 | --- | --- | --- |
 | `/health` | GET | 服务健康检查 |
 | `/demo-cases` | GET | 获取内置演示学生样例 |
+| `/train/status` | GET | 获取当前排序模型和 fallback 状态 |
+| `/evaluate` | GET | 运行内置 ML 指标评估 |
 | `/diagnose` | POST | 输入测评答案，输出知识点诊断结果 |
 | `/recommend` | POST | 输出画像、推荐、路径、学习卡和 Agent trace |
 | `/path` | POST | 输出学习路径和知识图谱 |
 | `/generate` | POST | 输出 RAG 个性化学习卡 |
 | `/feedback` | POST | 输入学习反馈，输出反馈前后变化 |
+| `/student/update-profile` | POST | 输入历史画像和新事件，输出更新画像 |
 
 请求示例：
 
@@ -209,6 +234,10 @@ GET http://127.0.0.1:8000/health
 - `recommendations`：推荐资源、分数和推荐理由。
 - `learning_path`：阶段化学习路径。
 - `generated_cards`：基于检索资源生成的个性化学习卡。
+- `model_meta`：排序模型类型、特征版本、训练指标和 fallback 状态。
+- `retrieval_evidence`：RAG 检索证据。
+- `generation_quality`：生成质量分。
+- `counterfactual_explanations`：反事实推荐解释。
 - `knowledge_graph`：知识图谱节点及当前掌握度。
 - `agent_traces`：多智能体执行过程。
 

@@ -16,6 +16,7 @@ class InteractionEvent:
     completed: bool = False
     dwell_seconds: int = 0
     liked: bool | None = None
+    timestamp: int | None = None
 
 
 @dataclass(frozen=True)
@@ -29,6 +30,12 @@ class LearningResource:
     quality: float = 0.8
     url: str | None = None
     content: str = ""
+    prerequisites_covered: tuple[str, ...] = ()
+    audience: tuple[str, ...] = ()
+    tags: tuple[str, ...] = ()
+    question: str = ""
+    answer: str = ""
+    explanation: str = ""
 
 
 @dataclass(frozen=True)
@@ -53,6 +60,7 @@ class StudentProfile:
     stability_score: float = 0.5
     preference_confidence: float = 0.0
     forgetting_risk: float = 0.5
+    learning_stage: Literal["foundation", "practice", "integration", "project"] = "foundation"
 
 
 @dataclass(frozen=True)
@@ -60,6 +68,7 @@ class Recommendation:
     resource: LearningResource
     score: float
     reasons: tuple[str, ...]
+    features: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

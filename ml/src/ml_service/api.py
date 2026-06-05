@@ -7,6 +7,7 @@ except ImportError as exc:  # pragma: no cover
     raise RuntimeError("Please run `pip install -r ml/requirements.txt` before starting the API service.") from exc
 
 from .demo_cases import DEMO_CASES
+from .evaluation import run_builtin_evaluation
 from .models import LearningStyle
 from .models import InteractionEvent
 from .pipeline import LearningMLPipeline
@@ -66,6 +67,10 @@ class FeedbackRequest(BaseModel):
     top_k: int = Field(default=6, ge=1, le=20)
 
 
+class UpdateProfileRequest(BaseModel):
+    student: StudentRequest
+
+
 app = FastAPI(title="Personalized Learning ML Service", version="1.0.0")
 pipeline = LearningMLPipeline()
 
@@ -78,6 +83,19 @@ def health() -> dict[str, str]:
 @app.get("/demo-cases")
 def demo_cases() -> dict:
     return DEMO_CASES
+
+
+@app.get("/train/status")
+def train_status() -> dict:
+    return pipeline.recommendation_agent.status()
+
+
+@app.get("/evaluate")
+def evaluate() -> dict:
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2]
+    return run_builtin_evaluation(root, write_report=False)
 
 
 @app.post("/diagnose")
@@ -136,6 +154,18 @@ def feedback(request: FeedbackRequest) -> dict:
         preferred_styles=request.student.preferred_styles,
         previous_mastery=request.student.previous_mastery,
         top_k=request.top_k,
+    )
+
+
+@app.post("/student/update-profile")
+def update_profile(request: UpdateProfileRequest) -> dict:
+    return pipeline.update_profile(
+        student_id=request.student.student_id,
+        diagnostics=request.student.diagnostics,
+        events=_events_from_dicts(request.student.events, request.student.student_id),
+        goals=request.student.goals,
+        preferred_styles=request.student.preferred_styles,
+        previous_mastery=request.student.previous_mastery,
     )
 
 

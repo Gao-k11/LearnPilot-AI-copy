@@ -36,7 +36,7 @@ def load_dotenv_if_present() -> None:
             if not item or item.startswith("#") or "=" not in item:
                 continue
             key, value = item.split("=", 1)
-            key = key.strip()
+            key = key.strip().lstrip("\ufeff")
             value = value.strip().strip('"').strip("'")
             if key and key not in os.environ:
                 os.environ[key] = value
@@ -45,19 +45,21 @@ def load_dotenv_if_present() -> None:
 @dataclass(frozen=True)
 class QwenMaxClient:
     api_key: str | None = None
-    model: str = "qwen-max"
+    model: str = "qwen3.7-plus"
     base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     timeout_seconds: int = 30
 
     @classmethod
     def from_env(cls) -> "QwenMaxClient | None":
         load_dotenv_if_present()
+        if os.getenv("LEARNPILOT_LLM_MODE", "auto").lower() in {"template", "offline", "disabled"}:
+            return None
         api_key = os.getenv("DASHSCOPE_API_KEY") or os.getenv("QWEN_API_KEY")
         if not api_key:
             return None
         return cls(
             api_key=api_key,
-            model=os.getenv("QWEN_MODEL", "qwen-max"),
+            model=os.getenv("QWEN_MODEL", "qwen3.7-plus"),
             base_url=os.getenv("QWEN_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1").rstrip("/"),
             timeout_seconds=int(os.getenv("QWEN_TIMEOUT_SECONDS", "30")),
         )
@@ -132,7 +134,7 @@ class ContentGenerator:
         merged = {**fallback, **parsed}
         merged["rag_context"] = contexts
         merged["generation_meta"] = {
-            "provider": "qwen-max" if isinstance(self.llm_client, QwenMaxClient) else "custom",
+            "provider": self.llm_client.model if isinstance(self.llm_client, QwenMaxClient) else "custom",
             "fallback_used": False,
         }
         return merged
@@ -147,7 +149,7 @@ class ContentGenerator:
 
         return (
             "请为学生生成一张个性化学习卡，返回 JSON 对象，字段必须包含："
-            "title, explanation, example, practice, answer, mistake_analysis, review_tip。"
+            "title, explanation, example, practice, answer, mistake_analysis, review_tip, evidence_refs, difficulty_reason。"
             f"\n学生ID：{profile.student_id}"
             f"\n学习目标：{goals}"
             f"\n当前知识点：{step.knowledge_point}"
@@ -158,12 +160,22 @@ class ContentGenerator:
             f"\n遗忘风险：{profile.forgetting_risk}"
             f"\n推荐资源：{resources}"
             f"\n检索依据：\n{evidence}"
-            "\n要求：内容必须引用检索依据，练习题要可验证，答案要简洁，难度要贴合学生风险等级。"
+            "\n要求：内容必须引用检索依据，练习题要可验证，答案要简洁，难度要贴合学生风险等级，避免不可验证建议。"
         )
 
     def _parse_generated_card(self, generated: str) -> dict[str, str]:
         data = json.loads(generated)
-        allowed = {"title", "explanation", "example", "practice", "answer", "mistake_analysis", "review_tip"}
+        allowed = {
+            "title",
+            "explanation",
+            "example",
+            "practice",
+            "answer",
+            "mistake_analysis",
+            "review_tip",
+            "evidence_refs",
+            "difficulty_reason",
+        }
         return {key: str(value) for key, value in data.items() if key in allowed and value}
 
     def _fallback_card(
@@ -183,6 +195,8 @@ class ContentGenerator:
             "answer": f"参考答案应包含 {point} 的关键步骤，并能解释每一步为什么成立。",
             "mistake_analysis": f"如果在 {point} 出错，优先检查概念边界、步骤遗漏和是否套用了不适用的例子。",
             "review_tip": f"完成资源后用 3 句话复述 {point} 的核心概念，并做一次错因标注。",
+            "evidence_refs": "；".join(context["chunk_id"] for context in contexts) if contexts else "template",
+            "difficulty_reason": f"当前风险等级为 {risk_level}，因此练习难度围绕 {point} 的可验证步骤设计。",
             "rag_context": contexts,
             "generation_meta": {"provider": "template", "fallback_used": True},
         }

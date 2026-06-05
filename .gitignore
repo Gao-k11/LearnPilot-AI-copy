@@ -2,3 +2,6 @@
 ml/.env
 __pycache__/
 *.py[cod]
+ml/artifacts/
+ml/data/generated/
+ml/reports/

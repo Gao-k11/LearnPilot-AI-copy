@@ -45,6 +45,9 @@ class ResourceRecommender:
             reasons.append(f"符合偏好的学习形式：{resource.style}")
         return Recommendation(resource=resource, score=round(score, 4), reasons=tuple(reasons))
 
+    def score_resource(self, profile: StudentProfile, resource: LearningResource) -> Recommendation:
+        return self._score_resource(profile, resource)
+
     def _weakness_match(self, profile: StudentProfile, resource: LearningResource) -> float:
         if not resource.knowledge_points:
             return 0.0

@@ -8,6 +8,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
+os.environ.setdefault("LEARNPILOT_LLM_MODE", "template")
 
 from ml_service import InteractionEvent, LearningMLPipeline
 from ml_service.api import app
@@ -232,6 +233,39 @@ class ApiTest(unittest.TestCase):
         )
 
         self.assertEqual(response.status_code, 422)
+
+    def test_new_ml2_endpoints_are_available(self) -> None:
+        client = TestClient(app)
+
+        status = client.get("/train/status")
+        self.assertEqual(status.status_code, 200)
+        self.assertIn("model_type", status.json())
+
+        evaluation = client.get("/evaluate")
+        self.assertEqual(evaluation.status_code, 200)
+        self.assertIn("mean_map@5", evaluation.json())
+
+        profile = client.post(
+            "/student/update-profile",
+            json={
+                "student": {
+                    "student_id": "stu_profile",
+                    "diagnostics": {"变量": 0.5, "循环": 0.3},
+                    "events": [
+                        {
+                            "resource_id": "r003",
+                            "knowledge_points": ["循环"],
+                            "score": 0.8,
+                            "completed": True,
+                            "dwell_seconds": 600,
+                            "liked": True,
+                        }
+                    ],
+                }
+            },
+        )
+        self.assertEqual(profile.status_code, 200)
+        self.assertIn("learning_stage", profile.json()["profile"])
 
 
 if __name__ == "__main__":

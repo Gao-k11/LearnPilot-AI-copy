@@ -39,6 +39,7 @@ class StudentProfiler:
         stability_score = self._stability(events)
         preference_confidence = self._preference_confidence(events, preferred_styles or [])
         forgetting_risk = self._forgetting_risk(average_mastery, stability_score, engagement_score)
+        learning_stage = self._learning_stage(average_mastery, weak_points, events)
 
         return StudentProfile(
             student_id=student_id,
@@ -54,6 +55,7 @@ class StudentProfiler:
             stability_score=stability_score,
             preference_confidence=preference_confidence,
             forgetting_risk=forgetting_risk,
+            learning_stage=learning_stage,
         )
 
     def _event_signal(self, event: InteractionEvent) -> float:
@@ -111,3 +113,13 @@ class StudentProfiler:
     def _forgetting_risk(self, average_mastery: float, stability_score: float, engagement_score: float) -> float:
         risk = (1.0 - average_mastery) * 0.5 + (1.0 - stability_score) * 0.3 + (1.0 - engagement_score) * 0.2
         return round(self._clamp(risk), 4)
+
+    def _learning_stage(self, average_mastery: float, weak_points: list[str], events: list[InteractionEvent]) -> str:
+        project_events = [event for event in events if "项目实践" in event.knowledge_points]
+        if project_events and average_mastery >= 0.72:
+            return "project"
+        if average_mastery >= 0.68 and len(weak_points) <= 3:
+            return "integration"
+        if average_mastery >= 0.45:
+            return "practice"
+        return "foundation"

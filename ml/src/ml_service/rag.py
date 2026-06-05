@@ -27,10 +27,13 @@ class ResourceRetriever:
         query_tokens = self._tokenize(query)
         document_frequency = self._document_frequency(chunks)
         average_length = sum(len(chunk.tokens) for chunk in chunks) / len(chunks)
-        scored = [
-            (self._score(query, query_tokens, chunk, document_frequency, len(chunks), average_length), chunk)
-            for chunk in chunks
-        ]
+        tfidf_query = Counter(query_tokens)
+        scored = []
+        for chunk in chunks:
+            bm25 = self._score(query, query_tokens, chunk, document_frequency, len(chunks), average_length)
+            tfidf = self._tfidf_cosine(tfidf_query, chunk.tokens, document_frequency, len(chunks))
+            rerank = self._rerank(query, chunk)
+            scored.append((bm25 * 0.65 + tfidf * 0.25 + rerank * 0.1, chunk))
         scored.sort(key=lambda item: item[0], reverse=True)
 
         deduped: list[tuple[float, ResourceChunk]] = []
@@ -48,6 +51,7 @@ class ResourceRetriever:
                 "resource_id": chunk.resource.resource_id,
                 "chunk_id": chunk.chunk_id,
                 "title": chunk.resource.title,
+                "source_title": chunk.resource.title,
                 "knowledge_points": list(chunk.resource.knowledge_points),
                 "style": chunk.resource.style,
                 "difficulty": chunk.resource.difficulty,
@@ -140,3 +144,36 @@ class ResourceRetriever:
         start = max(0, index - 20)
         end = min(len(text), index + length)
         return text[start:end]
+
+    def _tfidf_cosine(
+        self,
+        query_counts: Counter[str],
+        document_tokens: tuple[str, ...],
+        document_frequency: Counter[str],
+        total_documents: int,
+    ) -> float:
+        if not query_counts or not document_tokens:
+            return 0.0
+        document_counts = Counter(document_tokens)
+        shared = set(query_counts) & set(document_counts)
+        if not shared:
+            return 0.0
+
+        def weight(token: str, count: int) -> float:
+            idf = math.log(1 + total_documents / (1 + document_frequency[token]))
+            return count * idf
+
+        numerator = sum(weight(token, query_counts[token]) * weight(token, document_counts[token]) for token in shared)
+        query_norm = math.sqrt(sum(weight(token, count) ** 2 for token, count in query_counts.items()))
+        doc_norm = math.sqrt(sum(weight(token, count) ** 2 for token, count in document_counts.items()))
+        return 0.0 if query_norm == 0 or doc_norm == 0 else numerator / (query_norm * doc_norm)
+
+    def _rerank(self, query: str, chunk: ResourceChunk) -> float:
+        score = 0.0
+        if query in chunk.resource.knowledge_points:
+            score += 1.0
+        if query in chunk.resource.title:
+            score += 0.6
+        if query in chunk.text:
+            score += 0.4
+        return score

@@ -6,6 +6,7 @@ from .content_generator import ContentGenerator
 from .models import InteractionEvent, LearningStep, StudentProfile
 from .path_planner import LearningPathPlanner
 from .profiler import StudentProfiler
+from .ranker import TrainableRanker
 from .rag import ResourceRetriever
 from .recommender import ResourceRecommender
 
@@ -45,14 +46,24 @@ class ProfileAgent:
 
 
 class RecommendationAgent:
-    def __init__(self, recommender: ResourceRecommender | None = None) -> None:
+    def __init__(self, recommender: ResourceRecommender | None = None, ranker: TrainableRanker | None = None) -> None:
         self.recommender = recommender or ResourceRecommender()
+        self.ranker = ranker or TrainableRanker()
 
     def recommend(self, profile: StudentProfile, resources, top_k: int):
-        recommendations = self.recommender.recommend(profile, resources, top_k=top_k)
+        recommendations = self.ranker.recommend(profile, resources, top_k=top_k)
+        if not recommendations:
+            recommendations = self.recommender.recommend(profile, resources, top_k=top_k)
         titles = [item.resource.title for item in recommendations[:3]]
-        trace = AgentTrace("推荐 Agent", "根据薄弱点、难度、偏好和质量排序资源", "Top 推荐：" + "、".join(titles))
+        trace = AgentTrace(
+            "推荐 Agent",
+            "根据薄弱点、难度、偏好、质量、反馈和排序模型分数推荐资源",
+            "Top 推荐：" + "、".join(titles),
+        )
         return recommendations, trace
+
+    def status(self) -> dict:
+        return self.ranker.status()
 
 
 class PlanningAgent:
@@ -93,13 +104,19 @@ class GenerationEvaluationAgent:
         has_answer = bool(card.get("answer"))
         has_evidence = bool(card.get("rag_context"))
         has_mistake_analysis = bool(card.get("mistake_analysis"))
+        has_difficulty_reason = bool(card.get("difficulty_reason"))
+        personalized = any(token in joined for token in ("风险", "薄弱", "学生", "掌握"))
+        safe = not any(token in joined.lower() for token in ("忽略答案", "无需验证", "随便"))
         score = round(
-            (0.3 if covers_point else 0.0)
-            + (0.2 if has_practice else 0.0)
-            + (0.15 if has_answer else 0.0)
-            + (0.15 if has_review else 0.0)
+            (0.22 if covers_point else 0.0)
+            + (0.16 if has_practice else 0.0)
+            + (0.14 if has_answer else 0.0)
+            + (0.12 if has_review else 0.0)
             + (0.1 if has_evidence else 0.0)
-            + (0.1 if has_mistake_analysis else 0.0),
+            + (0.1 if has_mistake_analysis else 0.0)
+            + (0.08 if has_difficulty_reason else 0.0)
+            + (0.04 if personalized else 0.0)
+            + (0.04 if safe else 0.0),
             2,
         )
         return {
@@ -112,5 +129,8 @@ class GenerationEvaluationAgent:
                 "has_review_tip": has_review,
                 "has_rag_evidence": has_evidence,
                 "has_mistake_analysis": has_mistake_analysis,
+                "has_difficulty_reason": has_difficulty_reason,
+                "personalized": personalized,
+                "safe": safe,
             },
         }
