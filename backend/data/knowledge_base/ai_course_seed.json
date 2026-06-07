@@ -1,0 +1,18 @@
+{
+  "course": "人工智能",
+  "knowledge_points": [
+    "机器学习基础",
+    "神经网络",
+    "CNN",
+    "Transformer",
+    "模型评估"
+  ],
+  "resource_types": [
+    "lecture",
+    "mind_map",
+    "exercise",
+    "reading",
+    "code_example",
+    "video_script"
+  ]
+}
