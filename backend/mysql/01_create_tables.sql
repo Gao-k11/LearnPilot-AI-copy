@@ -1,0 +1,145 @@
+CREATE DATABASE IF NOT EXISTS learning_agent
+  CHARACTER SET utf8mb4
+  COLLATE utf8mb4_unicode_ci;
+
+USE learning_agent;
+
+CREATE TABLE IF NOT EXISTS `user` (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  username VARCHAR(64) NOT NULL UNIQUE,
+  display_name VARCHAR(64),
+  role VARCHAR(32) NOT NULL DEFAULT 'student',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS course (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  name VARCHAR(128) NOT NULL,
+  description TEXT,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS knowledge_point (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  course_id INT NOT NULL,
+  name VARCHAR(128) NOT NULL,
+  description TEXT,
+  parent_id INT NULL,
+  difficulty VARCHAR(32) NOT NULL DEFAULT 'medium',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_kp_course FOREIGN KEY (course_id) REFERENCES course(id),
+  CONSTRAINT fk_kp_parent FOREIGN KEY (parent_id) REFERENCES knowledge_point(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS course_resource (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  course_id INT NOT NULL,
+  knowledge_point_id INT NULL,
+  title VARCHAR(200) NOT NULL,
+  resource_type VARCHAR(32) NOT NULL,
+  content TEXT NOT NULL,
+  source VARCHAR(255),
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_course_resource_course FOREIGN KEY (course_id) REFERENCES course(id),
+  CONSTRAINT fk_course_resource_kp FOREIGN KEY (knowledge_point_id) REFERENCES knowledge_point(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS student_profile (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  user_id INT NOT NULL,
+  major VARCHAR(128),
+  grade VARCHAR(64),
+  course VARCHAR(128),
+  goal TEXT,
+  preference VARCHAR(128),
+  cognitive_style VARCHAR(128),
+  knowledge_level VARCHAR(64),
+  raw_text TEXT NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_profile_user FOREIGN KEY (user_id) REFERENCES `user`(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS student_weakness (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  user_id INT NOT NULL,
+  profile_id INT NULL,
+  knowledge_point VARCHAR(128) NOT NULL,
+  weakness_level FLOAT NOT NULL DEFAULT 0.7,
+  evidence TEXT,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_weakness_user FOREIGN KEY (user_id) REFERENCES `user`(id),
+  CONSTRAINT fk_weakness_profile FOREIGN KEY (profile_id) REFERENCES student_profile(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS learning_resource (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  user_id INT NOT NULL,
+  course_id INT NULL,
+  title VARCHAR(200) NOT NULL,
+  resource_type VARCHAR(32) NOT NULL,
+  content TEXT NOT NULL,
+  review_status VARCHAR(32) NOT NULL DEFAULT 'approved',
+  review_notes TEXT,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_learning_resource_user FOREIGN KEY (user_id) REFERENCES `user`(id),
+  CONSTRAINT fk_learning_resource_course FOREIGN KEY (course_id) REFERENCES course(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS learning_path (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  user_id INT NOT NULL,
+  course_id INT NULL,
+  title VARCHAR(200) NOT NULL,
+  goal TEXT NOT NULL,
+  status VARCHAR(32) NOT NULL DEFAULT 'active',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_learning_path_user FOREIGN KEY (user_id) REFERENCES `user`(id),
+  CONSTRAINT fk_learning_path_course FOREIGN KEY (course_id) REFERENCES course(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS learning_path_node (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  path_id INT NOT NULL,
+  resource_id INT NULL,
+  step_order INT NOT NULL,
+  title VARCHAR(200) NOT NULL,
+  objective TEXT NOT NULL,
+  estimated_minutes INT NOT NULL DEFAULT 30,
+  status VARCHAR(32) NOT NULL DEFAULT 'pending',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_path_node_path FOREIGN KEY (path_id) REFERENCES learning_path(id),
+  CONSTRAINT fk_path_node_resource FOREIGN KEY (resource_id) REFERENCES learning_resource(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS evaluation_result (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  user_id INT NOT NULL,
+  path_id INT NULL,
+  mastery_score FLOAT NOT NULL,
+  feedback TEXT NOT NULL,
+  profile_update JSON,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_evaluation_user FOREIGN KEY (user_id) REFERENCES `user`(id),
+  CONSTRAINT fk_evaluation_path FOREIGN KEY (path_id) REFERENCES learning_path(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS chat_message (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  user_id INT NOT NULL,
+  role VARCHAR(32) NOT NULL,
+  content TEXT NOT NULL,
+  agent_name VARCHAR(64),
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_chat_user FOREIGN KEY (user_id) REFERENCES `user`(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
