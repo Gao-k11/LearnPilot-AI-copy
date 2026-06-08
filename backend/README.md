@@ -111,6 +111,60 @@ uvicorn backend.app.main:app --reload --host 127.0.0.1 --port 8001
 
 当 ML 服务不可用时，主后端会自动回退到本地 Mock MLAdapter，现有接口仍可正常调用。
 
+## Render 部署
+
+本项目支持两种数据库模式：
+
+```env
+DATABASE_MODE=mysql
+SQLITE_DATABASE_URL=sqlite:///./learning_agent_demo.db
+```
+
+本地开发默认使用 `DATABASE_MODE=mysql`，继续连接 MySQL，不影响现有开发流程。Render 云端演示推荐使用 `DATABASE_MODE=sqlite`，构建阶段会创建 SQLite 演示库并插入 demo 数据。
+
+Render 部署文件：
+
+```text
+render.yaml
+```
+
+Render Web Service 配置要点：
+
+```text
+Root Directory: 当前后端目录
+Build Command: pip install -r requirements.txt && python scripts/init_sqlite_demo.py
+Start Command: uvicorn backend.app.main:app --host 0.0.0.0 --port $PORT
+```
+
+Render 环境变量：
+
+```env
+DATABASE_MODE=sqlite
+SQLITE_DATABASE_URL=sqlite:///./learning_agent_demo.db
+APP_ENV=production
+APP_DEBUG=false
+USE_ML_SERVICE=false
+```
+
+本地模拟 Render SQLite 演示模式：
+
+```powershell
+$env:DATABASE_MODE="sqlite"
+$env:SQLITE_DATABASE_URL="sqlite:///./learning_agent_demo.db"
+$env:USE_ML_SERVICE="false"
+python scripts/init_sqlite_demo.py
+uvicorn backend.app.main:app --host 0.0.0.0 --port 8001
+```
+
+部署后验证：
+
+```text
+/health
+/docs
+/openapi.json
+/api/v1/learning/start
+```
+
 ## 知识库素材导入
 
 Markdown 知识库素材位于：

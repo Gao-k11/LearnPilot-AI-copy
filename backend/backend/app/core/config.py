@@ -10,6 +10,9 @@ class Settings(BaseSettings):
     app_debug: bool = Field(default=True, alias="APP_DEBUG")
     app_port: int = Field(default=8001, alias="APP_PORT")
 
+    database_mode: str = Field(default="mysql", alias="DATABASE_MODE")
+    sqlite_database_url: str = Field(default="sqlite:///./learning_agent_demo.db", alias="SQLITE_DATABASE_URL")
+
     mysql_host: str = Field(default="127.0.0.1", alias="MYSQL_HOST")
     mysql_port: int = Field(default=3306, alias="MYSQL_PORT")
     mysql_user: str = Field(default="root", alias="MYSQL_USER")
@@ -24,10 +27,16 @@ class Settings(BaseSettings):
 
     @property
     def database_url(self) -> str:
+        if self.database_mode.lower() == "sqlite":
+            return self.sqlite_database_url
         return (
             f"mysql+pymysql://{self.mysql_user}:{self.mysql_password}"
             f"@{self.mysql_host}:{self.mysql_port}/{self.mysql_database}?charset=utf8mb4"
         )
+
+    @property
+    def is_sqlite(self) -> bool:
+        return self.database_mode.lower() == "sqlite"
 
     @property
     def cors_origin_list(self) -> list[str]:
