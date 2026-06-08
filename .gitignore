@@ -1,7 +1,17 @@
-.env
-ml/.env
+# Python
 __pycache__/
-*.py[cod]
-ml/artifacts/
-ml/data/generated/
-ml/reports/
+*.pyc
+
+# Virtual environments
+.venv/
+venv/
+
+# Environment files
+.env
+
+# Local databases
+*.db
+
+# IDE
+.vscode/
+.idea/
