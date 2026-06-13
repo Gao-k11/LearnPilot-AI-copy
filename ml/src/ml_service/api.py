@@ -8,7 +8,7 @@ except ImportError as exc:  # pragma: no cover
 
 from .demo_cases import DEMO_CASES
 from .evaluation import run_builtin_evaluation
-from .models import LearningStyle
+from .models import KnowledgeNode, LearningResource, LearningStyle
 from .models import InteractionEvent
 from .pipeline import LearningMLPipeline
 
@@ -40,9 +40,42 @@ class StudentRequest(BaseModel):
         return value
 
 
+class ResourceRequest(BaseModel):
+    resource_id: str
+    title: str
+    knowledge_points: list[str] = Field(default_factory=list)
+    difficulty: float = Field(default=0.55, ge=0.0, le=1.0)
+    style: LearningStyle = "text"
+    estimated_minutes: int = Field(default=25, ge=1, le=600)
+    quality: float = Field(default=0.8, ge=0.0, le=1.0)
+    url: str | None = None
+    content: str = ""
+    prerequisites_covered: list[str] = Field(default_factory=list)
+    audience: list[str] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+    question: str = ""
+    answer: str = ""
+    explanation: str = ""
+
+
+class KnowledgeNodeRequest(BaseModel):
+    name: str
+    prerequisites: list[str] = Field(default_factory=list)
+    importance: float = Field(default=1.0, ge=0.0, le=3.0)
+
+
+class CourseContextRequest(BaseModel):
+    course_id: int | str | None = None
+    course_name: str | None = None
+    requirement: str | None = None
+
+
 class RecommendRequest(BaseModel):
     student: StudentRequest
     top_k: int = Field(default=6, ge=1, le=20)
+    resources: list[ResourceRequest] | None = None
+    knowledge_graph: list[KnowledgeNodeRequest] | None = None
+    course_context: CourseContextRequest | None = None
 
 
 class DiagnoseRequest(BaseModel):
@@ -59,6 +92,9 @@ class DiagnoseRequest(BaseModel):
 
 class GenerateRequest(BaseModel):
     student: StudentRequest
+    resources: list[ResourceRequest] | None = None
+    knowledge_graph: list[KnowledgeNodeRequest] | None = None
+    course_context: CourseContextRequest | None = None
 
 
 class FeedbackRequest(BaseModel):
@@ -105,7 +141,8 @@ def diagnose(request: DiagnoseRequest) -> dict:
 
 @app.post("/recommend")
 def recommend(request: RecommendRequest) -> dict:
-    return pipeline.run_learning_loop(
+    active_pipeline = _pipeline_for_request(request.resources, request.knowledge_graph)
+    return active_pipeline.run_learning_loop(
         student_id=request.student.student_id,
         diagnostics=request.student.diagnostics,
         events=_events_from_dicts(request.student.events, request.student.student_id),
@@ -129,7 +166,8 @@ def path(request: RecommendRequest) -> dict:
 
 @app.post("/generate")
 def generate(request: GenerateRequest) -> dict:
-    result = pipeline.run_learning_loop(
+    active_pipeline = _pipeline_for_request(request.resources, request.knowledge_graph)
+    result = active_pipeline.run_learning_loop(
         student_id=request.student.student_id,
         diagnostics=request.student.diagnostics,
         events=_events_from_dicts(request.student.events, request.student.student_id),
@@ -181,4 +219,50 @@ def _events_from_dicts(events: list[InteractionEventRequest], fallback_student_i
             liked=event.liked,
         )
         for event in events
+    ]
+
+
+def _pipeline_for_request(
+    resources: list[ResourceRequest] | None,
+    knowledge_graph: list[KnowledgeNodeRequest] | None,
+) -> LearningMLPipeline:
+    if not resources and not knowledge_graph:
+        return pipeline
+    return LearningMLPipeline(
+        resources=_resources_from_request(resources) if resources else None,
+        knowledge_graph=_knowledge_graph_from_request(knowledge_graph) if knowledge_graph else None,
+    )
+
+
+def _resources_from_request(resources: list[ResourceRequest]) -> list[LearningResource]:
+    return [
+        LearningResource(
+            resource_id=item.resource_id,
+            title=item.title,
+            knowledge_points=tuple(item.knowledge_points),
+            difficulty=item.difficulty,
+            style=item.style,
+            estimated_minutes=item.estimated_minutes,
+            quality=item.quality,
+            url=item.url,
+            content=item.content,
+            prerequisites_covered=tuple(item.prerequisites_covered),
+            audience=tuple(item.audience),
+            tags=tuple(item.tags),
+            question=item.question,
+            answer=item.answer,
+            explanation=item.explanation,
+        )
+        for item in resources
+    ]
+
+
+def _knowledge_graph_from_request(nodes: list[KnowledgeNodeRequest]) -> list[KnowledgeNode]:
+    return [
+        KnowledgeNode(
+            name=item.name,
+            prerequisites=tuple(item.prerequisites),
+            importance=item.importance,
+        )
+        for item in nodes
     ]

@@ -2,7 +2,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from backend.app.adapters.ml_adapter import MockMLAdapter
+from backend.app.adapters.ml_adapter import MLAdapter
 from backend.app.agents.diagnosis_agent import DiagnosisAgent
 from backend.app.agents.evaluator_agent import EvaluatorAgent
 from backend.app.agents.planner_agent import PlannerAgent
@@ -32,7 +32,7 @@ class LearningService:
         self.planner_agent = PlannerAgent()
         self.tutor_agent = TutorAgent()
         self.evaluator_agent = EvaluatorAgent()
-        self.ml_adapter = MockMLAdapter()
+        self.ml_adapter = MLAdapter()
 
     def analyze_profile(self, db: Session, user_id: int, text: str) -> tuple[StudentProfile, dict]:
         try:
@@ -206,12 +206,10 @@ class LearningService:
         requirement: str,
     ) -> tuple[dict, list[LearningResource], LearningPath, list[LearningPathNode]]:
         ml_result = self.ml_adapter.recommend_learning(
-            {
-                "user_id": user_id,
-                "course_id": course_id,
-                "requirement": requirement,
-                "student_input": requirement,
-            }
+            db=db,
+            user_id=user_id,
+            course_id=course_id,
+            requirement=requirement,
         )
         if not ml_result:
             return self._start_learning_with_local_agents(db, user_id, course_id, requirement)
@@ -389,13 +387,15 @@ class LearningService:
 
     def _extract_ml_resources(self, data: dict[str, Any]) -> list[dict]:
         raw_items = (
-            data.get("generated_cards")
+            data.get("resources")
+            or data.get("generated_cards")
             or data.get("cards")
-            or data.get("resources")
             or data.get("learning_resources")
             or data.get("recommendations")
+            or data.get("result", {}).get("resources")
             or data.get("result", {}).get("generated_cards")
             or data.get("result", {}).get("recommendations")
+            or data.get("data", {}).get("resources")
             or data.get("data", {}).get("generated_cards")
             or data.get("data", {}).get("recommendations")
             or []
@@ -414,7 +414,13 @@ class LearningService:
                     }
                 )
             elif isinstance(item, dict):
-                content = item.get("content") or item.get("body") or item.get("text") or item.get("summary")
+                content = (
+                    item.get("content")
+                    or item.get("body")
+                    or item.get("text")
+                    or item.get("summary")
+                    or self._ml_card_to_content(item)
+                )
                 if not content:
                     continue
                 resources.append(
@@ -425,6 +431,17 @@ class LearningService:
                     }
                 )
         return resources
+
+    def _ml_card_to_content(self, item: dict) -> str:
+        parts = [
+            item.get("explanation"),
+            item.get("example"),
+            item.get("practice"),
+            item.get("answer"),
+            item.get("mistake_analysis"),
+            item.get("review_tip"),
+        ]
+        return "\n\n".join(str(part) for part in parts if part)
 
     def _extract_ml_path(self, data: dict[str, Any]) -> dict | None:
         path_payload = (

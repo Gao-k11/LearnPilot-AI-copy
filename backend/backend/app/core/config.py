@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     cors_origins: str = Field(default="*", alias="CORS_ORIGINS")
     ml_service_url: str = Field(default="http://127.0.0.1:8000", alias="ML_SERVICE_URL")
     use_ml_service: bool = Field(default=True, alias="USE_ML_SERVICE")
+    ml_service_timeout_seconds: float = Field(default=15.0, alias="ML_SERVICE_TIMEOUT_SECONDS")
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

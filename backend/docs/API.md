@@ -110,7 +110,9 @@
 
 ProfileAgent -> DiagnosisAgent -> ResourceAgent -> ReviewAgent -> PlannerAgent
 
-启用 LearnPilot-AI ML 服务后，`/api/v1/learning/start` 会优先调用 ML 服务 `/recommend`，并将返回的 `profile`、`recommendations`、`learning_path`、`generated_cards`、`agent_traces` 等结果映射为当前主后端响应结构；如果 ML 服务不可用，会自动回退到本地 Agent 流程。
+启用 LearnPilot-AI ML 服务后，`/api/v1/learning/start` 会优先调用 ML 服务 `/recommend`。前端请求结构不变，主后端会自动查询 `student_profile`、`student_weakness`、`knowledge_point`、`course_resource`，并转换为 ML 所需的 `student`、`resources`、`knowledge_graph` 和 `course_context`。
+
+ML 返回的 `profile`、`recommendations`、`learning_path`、`generated_cards/resources`、`agent_traces` 会被映射为当前主后端响应结构并落库；如果 ML 服务不可用，会自动回退到本地 Agent 流程。如果 ML 只返回部分字段，后端只补齐缺失资源或路径，不会丢弃已返回的 ML 结果。
 
 请求示例：
 
@@ -135,6 +137,7 @@ ProfileAgent -> DiagnosisAgent -> ResourceAgent -> ReviewAgent -> PlannerAgent
 APP_PORT=8001
 ML_SERVICE_URL=http://127.0.0.1:8000
 USE_ML_SERVICE=true
+ML_SERVICE_TIMEOUT_SECONDS=15
 ```
 
 启动顺序：
@@ -146,3 +149,14 @@ USE_ML_SERVICE=true
 ```powershell
 uvicorn backend.app.main:app --reload --host 127.0.0.1 --port 8001
 ```
+
+联调验证：
+
+```powershell
+Invoke-RestMethod -Method Post `
+  -Uri http://127.0.0.1:8001/api/v1/learning/start `
+  -ContentType "application/json" `
+  -Body '{"user_id":1,"course_id":1,"requirement":"我是软件工程大二学生，CNN比较薄弱，想准备期末考试"}'
+```
+
+响应中的资源应来自后端 `course_resource` 经过 ML 推荐/生成后的结果，而不是 ML 默认 Python demo 数据。

@@ -91,12 +91,15 @@ POST /api/v1/learning/start
 
 ## LearnPilot-AI ML 服务
 
-主后端现在支持调用 LearnPilot-AI 的 ML 服务。默认配置：
+主后端现在支持调用 LearnPilot-AI 的 ML 服务。`/api/v1/learning/start` 的前端请求格式保持不变，后端内部会把数据库里的课程知识点、课程资源、历史画像和薄弱点转换为 ML `/recommend` 请求。
+
+默认配置：
 
 ```env
 APP_PORT=8001
 ML_SERVICE_URL=http://127.0.0.1:8000
 USE_ML_SERVICE=true
+ML_SERVICE_TIMEOUT_SECONDS=15
 ```
 
 推荐启动顺序：
@@ -109,7 +112,12 @@ USE_ML_SERVICE=true
 uvicorn backend.app.main:app --reload --host 127.0.0.1 --port 8001
 ```
 
-当 ML 服务不可用时，主后端会自动回退到本地 Mock MLAdapter，现有接口仍可正常调用。
+对接数据流：
+
+1. 查询 `student_profile`、`student_weakness`，生成 ML 所需的 `diagnostics`、`previous_mastery`、`goals`、`preferred_styles`。
+2. 查询 `knowledge_point` 和 `course_resource`，转换成 ML 可排序、可 RAG 检索的 `knowledge_graph` 和 `resources`。
+3. 调用 ML `/recommend`，把返回的 `profile`、`generated_cards/resources`、`learning_path` 映射并保存到后端表。
+4. 当 ML 服务不可用时，主后端会自动回退到本地 Agent 流程；当 ML 只返回部分字段时，后端只补齐缺失资源或路径。
 
 ## Render 部署
 

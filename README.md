@@ -2,7 +2,7 @@
 
 LearnPilot-AI 是面向“中国软件杯”A3 赛题“基于大模型的个性化资源生成与学习多智能体系统开发”的原型项目。项目围绕学习诊断、学生画像、资源推荐、学习路径规划、RAG 个性化内容生成和学习反馈闭环，构建一个可解释、可演示、可继续扩展的智能学习服务。
 
-当前仓库主要包含 ML 服务模块，用于验证个性化学习闭环的核心算法与接口能力。
+当前仓库包含主后端 `backend/` 与 ML 服务 `ml/` 两部分。前端调用主后端业务接口，主后端会把数据库中的课程、知识点、课程资源和学生历史画像转换为 ML 请求，再由 ML 服务完成推荐、路径规划、RAG 学习卡生成和质量评估。
 
 ## 项目目标
 
@@ -95,6 +95,7 @@ score = 0.42 * 薄弱点匹配
 ```text
 LearnPilot-AI/
   README.md
+  backend/              主后端服务、数据库模型、业务 API 和 ML 对接层
   ml/
     data/                 样例反馈数据
     docs/                 ML 设计文档
@@ -182,6 +183,29 @@ powershell -ExecutionPolicy Bypass -File ml/scripts/run_api.ps1 -Port 8000
 ```text
 GET http://127.0.0.1:8000/health
 ```
+
+### 6. 双服务联调
+
+后端对外接口保持 `/api/v1/learning/start` 不变。启用 ML 后，主后端会查询 `knowledge_point`、`course_resource`、`student_profile`、`student_weakness`，把真实课程资源传给 ML `/recommend`，再把 ML 返回的画像、资源和路径保存回后端数据库。
+
+```powershell
+# 终端 1：启动 ML 服务
+uvicorn ml_service.api:app --app-dir ml/src --reload --port 8000
+
+# 终端 2：启动主后端
+cd backend
+$env:ML_SERVICE_URL="http://127.0.0.1:8000"
+$env:USE_ML_SERVICE="true"
+uvicorn backend.app.main:app --reload --host 127.0.0.1 --port 8001
+```
+
+联调请求：
+
+```text
+POST http://127.0.0.1:8001/api/v1/learning/start
+```
+
+如果 ML 服务未启动、超时或大模型不可用，主后端会自动回退到本地 Agent 流程；如果只是 ML 返回了部分字段，后端只补齐缺失的资源或路径，不会丢弃已返回的 ML 结果。
 
 ## API 说明
 

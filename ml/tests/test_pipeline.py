@@ -234,6 +234,44 @@ class ApiTest(unittest.TestCase):
 
         self.assertEqual(response.status_code, 422)
 
+    def test_recommend_endpoint_uses_request_scoped_backend_resources(self) -> None:
+        client = TestClient(app)
+        response = client.post(
+            "/recommend",
+            json={
+                "student": {
+                    "student_id": "backend_user",
+                    "diagnostics": {"CNN": 0.2, "反向传播": 0.6},
+                    "preferred_styles": ["video"],
+                },
+                "top_k": 2,
+                "resources": [
+                    {
+                        "resource_id": "course_resource:1",
+                        "title": "Backend CNN Lecture",
+                        "knowledge_points": ["CNN"],
+                        "difficulty": 0.8,
+                        "style": "video",
+                        "estimated_minutes": 25,
+                        "quality": 0.95,
+                        "content": "CNN convolution pooling feature map backend course material.",
+                    }
+                ],
+                "knowledge_graph": [
+                    {"name": "CNN", "prerequisites": [], "importance": 1.2},
+                    {"name": "反向传播", "prerequisites": ["CNN"], "importance": 1.0},
+                ],
+                "course_context": {"course_id": 1, "course_name": "人工智能"},
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["recommendations"][0]["resource_id"], "course_resource:1")
+        self.assertEqual(payload["recommendations"][0]["title"], "Backend CNN Lecture")
+        evidence_ids = {item["resource_id"] for item in payload["retrieval_evidence"]}
+        self.assertIn("course_resource:1", evidence_ids)
+
     def test_new_ml2_endpoints_are_available(self) -> None:
         client = TestClient(app)
 
