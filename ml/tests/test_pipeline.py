@@ -83,6 +83,10 @@ class PipelineTest(unittest.TestCase):
         self.assertTrue(card["quality_check"]["passed"])
         self.assertTrue(card["quality_check"]["checks"]["has_rag_evidence"])
         self.assertIn("generation_meta", card)
+        self.assertEqual(card["generation_meta"]["provider"], "template")
+        self.assertTrue(card["generation_meta"]["fallback_used"])
+        self.assertNotIn("fallback_reason", card["generation_meta"])
+        self.assertTrue(result["recommendations"][0]["ranking_features"])
 
     def test_feedback_loop_updates_mastery(self) -> None:
         pipeline = LearningMLPipeline()
@@ -271,6 +275,49 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(payload["recommendations"][0]["title"], "Backend CNN Lecture")
         evidence_ids = {item["resource_id"] for item in payload["retrieval_evidence"]}
         self.assertIn("course_resource:1", evidence_ids)
+
+    def test_feedback_endpoint_uses_request_scoped_backend_resources(self) -> None:
+        client = TestClient(app)
+        response = client.post(
+            "/feedback",
+            json={
+                "student": {
+                    "student_id": "feedback_user",
+                    "diagnostics": {"CNN": 0.25},
+                    "preferred_styles": ["video"],
+                },
+                "feedback_events": [
+                    {
+                        "resource_id": "course_resource:feedback",
+                        "knowledge_points": ["CNN"],
+                        "score": 0.85,
+                        "completed": True,
+                        "dwell_seconds": 900,
+                        "liked": True,
+                    }
+                ],
+                "top_k": 2,
+                "resources": [
+                    {
+                        "resource_id": "course_resource:feedback",
+                        "title": "Feedback CNN Resource",
+                        "knowledge_points": ["CNN"],
+                        "difficulty": 0.55,
+                        "style": "video",
+                        "estimated_minutes": 20,
+                        "quality": 0.96,
+                        "content": "CNN feedback loop material with convolution and pooling.",
+                    }
+                ],
+                "knowledge_graph": [{"name": "CNN", "prerequisites": [], "importance": 1.2}],
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["after"]["recommendations"][0]["resource_id"], "course_resource:feedback")
+        evidence_ids = {item["resource_id"] for item in payload["after"]["retrieval_evidence"]}
+        self.assertIn("course_resource:feedback", evidence_ids)
 
     def test_new_ml2_endpoints_are_available(self) -> None:
         client = TestClient(app)

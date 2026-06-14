@@ -119,6 +119,9 @@ class ContentGenerator:
     ) -> dict[str, str | list[dict] | dict]:
         contexts = contexts or []
         fallback = self._fallback_card(profile, step, contexts)
+        if isinstance(self.llm_client, TemplateLLMClient):
+            return fallback
+
         prompt = self._build_prompt(profile, step, contexts)
 
         try:

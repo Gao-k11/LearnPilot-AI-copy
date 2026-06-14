@@ -101,6 +101,9 @@ class FeedbackRequest(BaseModel):
     student: StudentRequest
     feedback_events: list[InteractionEventRequest]
     top_k: int = Field(default=6, ge=1, le=20)
+    resources: list[ResourceRequest] | None = None
+    knowledge_graph: list[KnowledgeNodeRequest] | None = None
+    course_context: CourseContextRequest | None = None
 
 
 class UpdateProfileRequest(BaseModel):
@@ -184,7 +187,8 @@ def generate(request: GenerateRequest) -> dict:
 
 @app.post("/feedback")
 def feedback(request: FeedbackRequest) -> dict:
-    return pipeline.feedback_loop(
+    active_pipeline = _pipeline_for_request(request.resources, request.knowledge_graph)
+    return active_pipeline.feedback_loop(
         student_id=request.student.student_id,
         diagnostics=request.student.diagnostics,
         feedback_events=_events_from_dicts(request.feedback_events, request.student.student_id),

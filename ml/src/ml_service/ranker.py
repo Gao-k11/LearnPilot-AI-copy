@@ -177,9 +177,11 @@ class TrainableRanker:
 
     def _blend_score(self, model_score: float, rule_score: float) -> float:
         if self.meta.model_type == "lightgbm-classifier":
-            return model_score * 0.55 + rule_score * 0.45
+            return model_score * 0.25 + rule_score * 0.75
         if self.meta.model_type.startswith("sklearn"):
-            return rule_score
+            return model_score * 0.2 + rule_score * 0.8
+        if self.meta.model_type == "weighted-fallback":
+            return model_score * 0.15 + rule_score * 0.85
         return rule_score
 
     def _load(self) -> None:

@@ -63,7 +63,7 @@ class ResourceRecommender:
             repeated_points = sum(point_counts[point] for point in item.resource.knowledge_points)
             repeated_style = style_counts[item.resource.style]
             penalty = repeated_points * 0.03 + repeated_style * 0.04
-            adjusted = Recommendation(item.resource, round(item.score - penalty, 4), item.reasons)
+            adjusted = Recommendation(item.resource, round(item.score - penalty, 4), item.reasons, item.features)
             selected.append(adjusted)
             for point in item.resource.knowledge_points:
                 point_counts[point] += 1
