@@ -1,7 +1,52 @@
+from __future__ import annotations
+
+import json
+from urllib import error, request
+
+from backend.app.core.config import get_settings
+
+
 class MockLLMAdapter:
-    """LLM placeholder. Replace this class with real model API calls later."""
+    """DashScope Qwen adapter with deterministic template fallback for demo/offline mode."""
+
+    def __init__(self) -> None:
+        self.settings = get_settings()
+
+    def _qwen_json(self, prompt: str) -> dict | None:
+        if self.settings.learnpilot_llm_mode.lower() in {"template", "offline", "disabled"}:
+            return None
+        if not self.settings.dashscope_api_key:
+            return None
+        payload = {
+            "model": "qwen3.7-plus",
+            "messages": [
+                {"role": "system", "content": "你是 LearnPilot-AI 教学智能体，请严格返回 JSON。"},
+                {"role": "user", "content": prompt},
+            ],
+            "temperature": 0.35,
+            "response_format": {"type": "json_object"},
+        }
+        req = request.Request(
+            "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+            data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+            headers={"Authorization": f"Bearer {self.settings.dashscope_api_key}", "Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with request.urlopen(req, timeout=30) as response:
+                raw = json.loads(response.read().decode("utf-8"))
+            return json.loads(raw["choices"][0]["message"]["content"])
+        except (error.HTTPError, error.URLError, KeyError, json.JSONDecodeError, TimeoutError):
+            return None
 
     def profile_from_text(self, text: str) -> dict:
+        generated = self._qwen_json(
+            "请从学生学习需求中抽取画像，返回字段：major, grade, course, goal, weak_points, "
+            f"preference, cognitive_style, knowledge_level。学习需求：{text}"
+        )
+        if generated:
+            generated.setdefault("weak_points", [])
+            return generated
         weak_points = []
         for keyword in ["CNN", "卷积神经网络", "反向传播", "注意力机制", "Transformer", "机器学习"]:
             if keyword.lower() in text.lower():
@@ -27,6 +72,12 @@ class MockLLMAdapter:
         }
 
     def generate_resource(self, topic: str, resource_type: str, weak_points: list[str]) -> str:
+        generated = self._qwen_json(
+            "请生成教学资源，返回 JSON 字段 content，要求可验证、分层讲解并避免幻觉。"
+            f"主题：{topic}；资源类型：{resource_type}；薄弱点：{weak_points}"
+        )
+        if generated and generated.get("content"):
+            return str(generated["content"])
         weak_text = "、".join(weak_points) if weak_points else topic
         templates = {
             "lecture": f"讲义：围绕 {topic} 建立概念、公式/流程、常见误区和例题。重点补齐：{weak_text}。",
@@ -39,6 +90,16 @@ class MockLLMAdapter:
         return templates.get(resource_type, f"{resource_type}：关于 {topic} 的学习材料。")
 
     def tutor_answer(self, question: str) -> dict:
+        generated = self._qwen_json(
+            "请用苏格拉底式引导回答学生问题，返回 JSON 字段 answer, hints, next_action。"
+            f"学生问题：{question}"
+        )
+        if generated:
+            return {
+                "answer": str(generated.get("answer") or ""),
+                "hints": list(generated.get("hints") or []),
+                "next_action": str(generated.get("next_action") or "完成一个小练习并复盘。"),
+            }
         return {
             "answer": (
                 "我们先不直接给结论。你可以先判断这个问题涉及哪个概念、输入是什么、期望输出是什么。"

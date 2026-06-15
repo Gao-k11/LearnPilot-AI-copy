@@ -1,8 +1,33 @@
 from pydantic import BaseModel, Field
 
 
+class AuthRegisterRequest(BaseModel):
+    username: str = Field(min_length=3, max_length=64)
+    password: str = Field(min_length=6)
+    display_name: str | None = None
+    role: str = Field(default="student", pattern="^(student|teacher|admin)$")
+
+
+class AuthLoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class UserOut(BaseModel):
+    id: int
+    username: str
+    display_name: str | None = None
+    role: str
+
+
+class AuthResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: UserOut
+
+
 class ProfileAnalyzeRequest(BaseModel):
-    user_id: int = Field(default=1, description="学生用户 ID")
+    user_id: int | None = Field(default=None, description="学生用户 ID；认证后可省略")
     text: str = Field(..., description="学生自然语言学习需求")
 
 
@@ -23,7 +48,7 @@ class ProfileAnalyzeResponse(BaseModel):
 
 
 class ResourceGenerateRequest(BaseModel):
-    user_id: int = 1
+    user_id: int | None = None
     course_id: int | None = 1
     topic: str
     weak_points: list[str] = []
@@ -70,7 +95,8 @@ class PathPlanResponse(BaseModel):
 
 
 class TutorAskRequest(BaseModel):
-    user_id: int = 1
+    user_id: int | None = None
+    course_id: int | None = None
     question: str
     profile: StudentProfileOut | None = None
     history: list[str] = []
@@ -83,7 +109,8 @@ class TutorAskResponse(BaseModel):
 
 
 class EvaluationSubmitRequest(BaseModel):
-    user_id: int = 1
+    user_id: int | None = None
+    course_id: int | None = None
     path_id: int | None = None
     correct_count: int = Field(ge=0)
     total_count: int = Field(gt=0)
@@ -96,10 +123,12 @@ class EvaluationSubmitResponse(BaseModel):
     mastery_score: float
     feedback: str
     profile_update: dict
+    path_adjustment: str | None = None
+    updated_profile: dict | None = None
 
 
 class LearningStartRequest(BaseModel):
-    user_id: int = 1
+    user_id: int | None = None
     course_id: int | None = 1
     requirement: str
 
@@ -108,3 +137,48 @@ class LearningStartResponse(BaseModel):
     profile: StudentProfileOut
     resources: list[ResourceOut]
     path: PathPlanResponse
+    ml_trace: list[dict] = []
+    retrieval_evidence: list[dict] = []
+    generation_quality: dict | None = None
+
+
+class ResourceImportRequest(BaseModel):
+    filename: str
+    source_type: str = Field(default="markdown", pattern="^(markdown|pdf_text|question_json|mistake_json)$")
+    content: str
+
+
+class ImportJobOut(BaseModel):
+    id: int
+    course_id: int
+    user_id: int
+    source_type: str
+    filename: str
+    status: str
+    message: str | None = None
+    result: dict | None = None
+
+
+class CourseResourceOut(BaseModel):
+    id: int
+    course_id: int
+    knowledge_point_id: int | None = None
+    title: str
+    resource_type: str
+    content: str
+    source: str | None = None
+    source_type: str
+    status: str
+    version: int
+
+
+class QuestionOut(BaseModel):
+    id: int
+    course_id: int
+    knowledge_point_id: int | None = None
+    question_type: str
+    stem: str
+    answer: str | None = None
+    explanation: str | None = None
+    difficulty: float
+    source: str | None = None

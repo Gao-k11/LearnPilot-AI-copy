@@ -23,6 +23,12 @@ class Settings(BaseSettings):
     ml_service_url: str = Field(default="http://127.0.0.1:8000", alias="ML_SERVICE_URL")
     use_ml_service: bool = Field(default=True, alias="USE_ML_SERVICE")
     ml_service_timeout_seconds: float = Field(default=15.0, alias="ML_SERVICE_TIMEOUT_SECONDS")
+    jwt_secret_key: str = Field(default="change-me-in-production", alias="JWT_SECRET_KEY")
+    jwt_expire_minutes: int = Field(default=1440, alias="JWT_EXPIRE_MINUTES")
+    redis_url: str = Field(default="redis://127.0.0.1:6379/0", alias="REDIS_URL")
+    dashscope_api_key: str = Field(default="", alias="DASHSCOPE_API_KEY")
+    learnpilot_llm_mode: str = Field(default="auto", alias="LEARNPILOT_LLM_MODE")
+    log_level: str = Field(default="INFO", alias="LOG_LEVEL")
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

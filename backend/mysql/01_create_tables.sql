@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS `user` (
   id INT PRIMARY KEY AUTO_INCREMENT,
   username VARCHAR(64) NOT NULL UNIQUE,
   display_name VARCHAR(64),
+  password_hash VARCHAR(255),
   role VARCHAR(32) NOT NULL DEFAULT 'student',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
@@ -42,6 +43,10 @@ CREATE TABLE IF NOT EXISTS course_resource (
   resource_type VARCHAR(32) NOT NULL,
   content TEXT NOT NULL,
   source VARCHAR(255),
+  source_type VARCHAR(32) NOT NULL DEFAULT 'manual',
+  status VARCHAR(32) NOT NULL DEFAULT 'active',
+  version INT NOT NULL DEFAULT 1,
+  metadata JSON,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   CONSTRAINT fk_course_resource_course FOREIGN KEY (course_id) REFERENCES course(id),
@@ -59,6 +64,11 @@ CREATE TABLE IF NOT EXISTS student_profile (
   cognitive_style VARCHAR(128),
   knowledge_level VARCHAR(64),
   raw_text TEXT NOT NULL,
+  mastery JSON,
+  weak_points_json JSON,
+  engagement_score FLOAT,
+  forgetting_risk FLOAT,
+  learning_stage VARCHAR(64),
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   CONSTRAINT fk_profile_user FOREIGN KEY (user_id) REFERENCES `user`(id)
@@ -142,4 +152,89 @@ CREATE TABLE IF NOT EXISTS chat_message (
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   CONSTRAINT fk_chat_user FOREIGN KEY (user_id) REFERENCES `user`(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS import_job (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  course_id INT NOT NULL,
+  user_id INT NOT NULL,
+  source_type VARCHAR(32) NOT NULL,
+  filename VARCHAR(255) NOT NULL,
+  status VARCHAR(32) NOT NULL DEFAULT 'pending',
+  message TEXT,
+  result JSON,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_import_job_course FOREIGN KEY (course_id) REFERENCES course(id),
+  CONSTRAINT fk_import_job_user FOREIGN KEY (user_id) REFERENCES `user`(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS resource_chunk (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  resource_id INT NOT NULL,
+  course_id INT NOT NULL,
+  chunk_index INT NOT NULL,
+  content TEXT NOT NULL,
+  token_count INT NOT NULL DEFAULT 0,
+  embedding JSON,
+  keywords JSON,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_resource_chunk_resource FOREIGN KEY (resource_id) REFERENCES course_resource(id),
+  CONSTRAINT fk_resource_chunk_course FOREIGN KEY (course_id) REFERENCES course(id),
+  INDEX idx_resource_chunk_course (course_id),
+  FULLTEXT INDEX ft_resource_chunk_content (content)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS question (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  course_id INT NOT NULL,
+  knowledge_point_id INT NULL,
+  question_type VARCHAR(32) NOT NULL DEFAULT 'short_answer',
+  stem TEXT NOT NULL,
+  answer TEXT,
+  explanation TEXT,
+  difficulty FLOAT NOT NULL DEFAULT 0.5,
+  source VARCHAR(255),
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_question_course FOREIGN KEY (course_id) REFERENCES course(id),
+  CONSTRAINT fk_question_kp FOREIGN KEY (knowledge_point_id) REFERENCES knowledge_point(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS student_answer (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  user_id INT NOT NULL,
+  course_id INT NULL,
+  question_id INT NULL,
+  knowledge_point VARCHAR(128),
+  answer TEXT,
+  score FLOAT,
+  correct BOOLEAN,
+  elapsed_seconds INT NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_student_answer_user FOREIGN KEY (user_id) REFERENCES `user`(id),
+  CONSTRAINT fk_student_answer_course FOREIGN KEY (course_id) REFERENCES course(id),
+  CONSTRAINT fk_student_answer_question FOREIGN KEY (question_id) REFERENCES question(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS feedback_event (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  user_id INT NOT NULL,
+  course_id INT NULL,
+  resource_id INT NULL,
+  path_id INT NULL,
+  knowledge_points JSON,
+  score FLOAT,
+  completed BOOLEAN NOT NULL DEFAULT FALSE,
+  dwell_seconds INT NOT NULL DEFAULT 0,
+  liked BOOLEAN,
+  metadata JSON,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_feedback_event_user FOREIGN KEY (user_id) REFERENCES `user`(id),
+  CONSTRAINT fk_feedback_event_course FOREIGN KEY (course_id) REFERENCES course(id),
+  CONSTRAINT fk_feedback_event_resource FOREIGN KEY (resource_id) REFERENCES learning_resource(id),
+  CONSTRAINT fk_feedback_event_path FOREIGN KEY (path_id) REFERENCES learning_path(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

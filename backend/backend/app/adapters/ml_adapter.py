@@ -5,7 +5,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from backend.app.adapters.ml_service_client import MLServiceClient, MLServiceUnavailable
-from backend.app.models import Course, CourseResource, KnowledgePoint, StudentProfile, StudentWeakness
+from backend.app.models import Course, CourseResource, FeedbackEvent, KnowledgePoint, StudentProfile, StudentWeakness
 
 
 STYLE_MAP = {
@@ -130,6 +130,43 @@ class MLAdapter:
             self.last_fallback_reason = str(exc)
             return None
 
+    def feedback_learning(
+        self,
+        db: Session,
+        user_id: int,
+        course_id: int | None,
+        feedback_events: list[FeedbackEvent],
+        top_k: int = 6,
+    ) -> dict[str, Any] | None:
+        try:
+            profile = self._latest_profile(db, user_id)
+            weaknesses = self._latest_weaknesses(db, user_id, profile.id if profile else None)
+            knowledge_points = self._knowledge_points(db, course_id)
+            diagnostics = self._diagnostics_from_profile(profile) or self._diagnostics_from_weaknesses(weaknesses)
+            if not diagnostics:
+                diagnostics = {point.name: 0.5 for point in knowledge_points} or {"general_foundation": 0.45}
+            payload = {
+                "student": {
+                    "student_id": str(user_id),
+                    "diagnostics": diagnostics,
+                    "goals": [profile.goal] if profile and profile.goal else [],
+                    "preferred_styles": self._preferred_styles(profile),
+                    "events": [],
+                    "previous_mastery": self._diagnostics_from_profile(profile),
+                },
+                "feedback_events": [self._feedback_event_payload(event) for event in feedback_events],
+                "top_k": top_k,
+                "resources": self._resources(db, course_id, knowledge_points),
+                "knowledge_graph": self._knowledge_graph(knowledge_points),
+                "course_context": self._course_context(db, course_id, profile.goal if profile and profile.goal else ""),
+            }
+            data = self.client.feedback(payload)
+            self.last_fallback_reason = None
+            return data
+        except Exception as exc:
+            self.last_fallback_reason = str(exc)
+            return None
+
     def plan_path(self, payload: dict[str, Any]) -> dict[str, Any] | None:
         try:
             return self.client.path(payload)
@@ -158,6 +195,25 @@ class MLAdapter:
         except Exception as exc:
             self.last_fallback_reason = str(exc)
         return self._mock_evaluate_mastery(correct_count, total_count, completed_resource_count, study_minutes)
+
+    def _diagnostics_from_profile(self, profile: StudentProfile | None) -> dict[str, float]:
+        if profile and isinstance(profile.mastery, dict):
+            return {
+                str(point): round(max(0.0, min(1.0, float(score))), 4)
+                for point, score in profile.mastery.items()
+                if isinstance(score, int | float)
+            }
+        return {}
+
+    def _feedback_event_payload(self, event: FeedbackEvent) -> dict[str, Any]:
+        return {
+            "resource_id": f"learning_resource:{event.resource_id}" if event.resource_id else "",
+            "knowledge_points": event.knowledge_points or [],
+            "score": event.score,
+            "completed": event.completed,
+            "dwell_seconds": event.dwell_seconds,
+            "liked": event.liked,
+        }
 
     def _latest_profile(self, db: Session, user_id: int) -> StudentProfile | None:
         return (

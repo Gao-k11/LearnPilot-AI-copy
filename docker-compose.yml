@@ -1,0 +1,72 @@
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-learnpilot_root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-learning_agent}
+      MYSQL_USER: ${MYSQL_USER:-learnpilot}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-learnpilot_pwd}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./backend/mysql:/docker-entrypoint-initdb.d:ro
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  ml-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.ml
+    environment:
+      LEARNPILOT_LLM_MODE: ${LEARNPILOT_LLM_MODE:-template}
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
+    ports:
+      - "8000:8000"
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    depends_on:
+      - mysql
+      - redis
+      - ml-service
+    environment:
+      DATABASE_MODE: mysql
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${MYSQL_USER:-learnpilot}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-learnpilot_pwd}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-learning_agent}
+      REDIS_URL: redis://redis:6379/0
+      ML_SERVICE_URL: http://ml-service:8000
+      USE_ML_SERVICE: "true"
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-me-in-production}
+      LEARNPILOT_LLM_MODE: ${LEARNPILOT_LLM_MODE:-template}
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
+    ports:
+      - "8001:8001"
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    depends_on:
+      - redis
+      - mysql
+    environment:
+      DATABASE_MODE: mysql
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${MYSQL_USER:-learnpilot}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-learnpilot_pwd}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-learning_agent}
+      REDIS_URL: redis://redis:6379/0
+
+volumes:
+  mysql-data:

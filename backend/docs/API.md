@@ -8,7 +8,37 @@
 
 `GET /health`
 
-返回服务状态和数据库连通状态。
+返回服务状态、数据库、ML 服务、Redis、Qwen 配置状态。
+
+## 认证
+
+`POST /api/v1/auth/register`
+
+```json
+{
+  "username": "teacher1",
+  "password": "secret123",
+  "display_name": "教师一",
+  "role": "teacher"
+}
+```
+
+`POST /api/v1/auth/login`
+
+```json
+{
+  "username": "teacher1",
+  "password": "secret123"
+}
+```
+
+`GET /api/v1/auth/me`
+
+写入类接口建议携带：
+
+```text
+Authorization: Bearer <access_token>
+```
 
 ## 课程与知识点
 
@@ -19,6 +49,30 @@
 `GET /api/v1/knowledge-points?course_id=1`
 
 查询课程知识点。
+
+`POST /api/v1/courses/{course_id}/resources/import`
+
+教师或管理员导入课程资料。支持 `markdown`、`pdf_text`、`question_json`、`mistake_json`。导入会写入课程资源、资源切片或题库。
+
+```json
+{
+  "filename": "cnn.md",
+  "source_type": "markdown",
+  "content": "# CNN 入门\nCNN 包含卷积、池化和特征图。"
+}
+```
+
+`GET /api/v1/import-jobs/{job_id}`
+
+查询导入任务状态。
+
+`GET /api/v1/courses/{course_id}/resources`
+
+查询课程资源。
+
+`GET /api/v1/courses/{course_id}/questions`
+
+查询课程题库。
 
 ## 学习画像
 
@@ -85,6 +139,8 @@
 }
 ```
 
+响应包含 `answer`、`hints`、`next_action`，若命中课程切片，还会包含 `evidence`。
+
 ## 学习效果评估
 
 `POST /api/v1/evaluations/submit`
@@ -101,6 +157,8 @@
   "study_minutes": 120
 }
 ```
+
+提交后会写入反馈事件，并在 ML 服务可用时调用 `/feedback` 更新画像和路径调整摘要。
 
 ## 一键学习流程
 
@@ -160,3 +218,20 @@ Invoke-RestMethod -Method Post `
 ```
 
 响应中的资源应来自后端 `course_resource` 经过 ML 推荐/生成后的结果，而不是 ML 默认 Python demo 数据。
+
+## Docker 生产部署
+
+推荐使用根目录 `docker-compose.yml`：
+
+```powershell
+Copy-Item .env.production.example .env
+docker compose up --build
+```
+
+服务：
+
+- `backend`: `http://127.0.0.1:8001`
+- `ml-service`: `http://127.0.0.1:8000`
+- `mysql`: `3306`
+- `redis`: `6379`
+- `worker`: RQ worker，用于导入、训练、批处理等长任务扩展。

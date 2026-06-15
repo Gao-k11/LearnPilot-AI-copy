@@ -14,9 +14,11 @@ from backend.app.agents.tutor_agent import TutorAgent
 from backend.app.models import (
     ChatMessage,
     EvaluationResult,
+    FeedbackEvent,
     LearningPath,
     LearningPathNode,
     LearningResource,
+    ResourceChunk,
     StudentProfile,
     StudentWeakness,
 )
@@ -33,6 +35,7 @@ class LearningService:
         self.tutor_agent = TutorAgent()
         self.evaluator_agent = EvaluatorAgent()
         self.ml_adapter = MLAdapter()
+        self.last_ml_result: dict[str, Any] | None = None
 
     def analyze_profile(self, db: Session, user_id: int, text: str) -> tuple[StudentProfile, dict]:
         try:
@@ -211,6 +214,7 @@ class LearningService:
             course_id=course_id,
             requirement=requirement,
         )
+        self.last_ml_result = ml_result
         if not ml_result:
             return self._start_learning_with_local_agents(db, user_id, course_id, requirement)
 
@@ -315,6 +319,11 @@ class LearningService:
             db_profile.preference = profile.get("preference")
             db_profile.cognitive_style = profile.get("cognitive_style")
             db_profile.knowledge_level = profile.get("knowledge_level")
+            db_profile.mastery = profile.get("mastery") if isinstance(profile.get("mastery"), dict) else None
+            db_profile.weak_points_json = weak_points
+            db_profile.engagement_score = profile.get("engagement_score")
+            db_profile.forgetting_risk = profile.get("forgetting_risk")
+            db_profile.learning_stage = profile.get("learning_stage")
             db_profile.raw_text = raw_text
             db.add(db_profile)
             db.flush()
@@ -360,6 +369,10 @@ class LearningService:
             "preference": profile.get("preference") or profile.get("learning_preference"),
             "cognitive_style": profile.get("cognitive_style"),
             "knowledge_level": profile.get("knowledge_level") or profile.get("level"),
+            "mastery": profile.get("mastery") if isinstance(profile.get("mastery"), dict) else {},
+            "engagement_score": profile.get("engagement_score"),
+            "forgetting_risk": profile.get("forgetting_risk"),
+            "learning_stage": profile.get("learning_stage"),
         }
 
     def _extract_ml_weak_points(self, data: dict[str, Any], profile: dict) -> list[str]:
@@ -535,7 +548,13 @@ class LearningService:
             db.add(user_message)
             db.flush()
 
-            answer = self.tutor_agent.run(question, profile, history)
+            evidence = self._retrieve_tutor_evidence(db, question, limit=3)
+            enriched_history = list(history or [])
+            if evidence:
+                enriched_history.append("课程证据：" + " | ".join(item["snippet"] for item in evidence))
+            answer = self.tutor_agent.run(question, profile, enriched_history)
+            if evidence:
+                answer["evidence"] = evidence
             assistant_message = ChatMessage(
                 user_id=user_id,
                 role="assistant",
@@ -563,7 +582,43 @@ class LearningService:
         study_minutes: int,
     ) -> EvaluationResult:
         try:
+            latest_path = db.get(LearningPath, path_id) if path_id else None
+            course_id = latest_path.course_id if latest_path else None
+            knowledge_points = self._knowledge_points_from_path(db, path_id)
+            score = correct_count / total_count
+            feedback_event = FeedbackEvent(
+                user_id=user_id,
+                course_id=course_id,
+                path_id=path_id,
+                knowledge_points=knowledge_points,
+                score=score,
+                completed=completed_resource_count > 0,
+                dwell_seconds=study_minutes * 60,
+                liked=True if score >= 0.75 else False if score < 0.45 else None,
+                event_metadata={
+                    "correct_count": correct_count,
+                    "total_count": total_count,
+                    "completed_resource_count": completed_resource_count,
+                },
+            )
+            db.add(feedback_event)
+            db.flush()
+
             result = self.evaluator_agent.run(correct_count, total_count, completed_resource_count, study_minutes)
+            ml_feedback = self.ml_adapter.feedback_learning(db, user_id, course_id, [feedback_event])
+            if isinstance(ml_feedback, dict):
+                after = ml_feedback.get("after", {})
+                profile = after.get("profile", {}) if isinstance(after, dict) else {}
+                if isinstance(profile, dict):
+                    result["profile_update"] = {
+                        **result.get("profile_update", {}),
+                        "mastery": profile.get("mastery", {}),
+                        "weak_points": profile.get("weak_points", []),
+                        "learning_stage": profile.get("learning_stage"),
+                        "engagement_score": profile.get("engagement_score"),
+                        "forgetting_risk": profile.get("forgetting_risk"),
+                        "path_adjustment": ml_feedback.get("path_adjustment"),
+                    }
             evaluation = EvaluationResult(
                 user_id=user_id,
                 path_id=path_id,
@@ -582,8 +637,16 @@ class LearningService:
                     .first()
                 )
                 knowledge_level = result["profile_update"].get("knowledge_level")
-                if db_profile is not None and knowledge_level:
-                    db_profile.knowledge_level = knowledge_level
+                if db_profile is not None:
+                    if knowledge_level:
+                        db_profile.knowledge_level = knowledge_level
+                    if isinstance(result["profile_update"].get("mastery"), dict):
+                        db_profile.mastery = result["profile_update"]["mastery"]
+                    if isinstance(result["profile_update"].get("weak_points"), list):
+                        db_profile.weak_points_json = result["profile_update"]["weak_points"]
+                    db_profile.learning_stage = result["profile_update"].get("learning_stage") or db_profile.learning_stage
+                    db_profile.engagement_score = result["profile_update"].get("engagement_score") or db_profile.engagement_score
+                    db_profile.forgetting_risk = result["profile_update"].get("forgetting_risk") or db_profile.forgetting_risk
                     db.add(db_profile)
 
             db.commit()
@@ -592,6 +655,36 @@ class LearningService:
         except Exception:
             db.rollback()
             raise
+
+    def _retrieve_tutor_evidence(self, db: Session, question: str, limit: int = 3) -> list[dict]:
+        tokens = [token for token in question.replace("？", " ").replace("?", " ").split() if token]
+        query = db.query(ResourceChunk)
+        chunks = query.limit(80).all()
+        scored = []
+        for chunk in chunks:
+            score = sum(1 for token in tokens if token.lower() in chunk.content.lower())
+            if score or any(char in chunk.content for char in question[:12]):
+                scored.append((score, chunk))
+        scored.sort(key=lambda item: item[0], reverse=True)
+        return [
+            {
+                "chunk_id": chunk.id,
+                "resource_id": chunk.resource_id,
+                "snippet": chunk.content[:180],
+            }
+            for _, chunk in scored[:limit]
+        ]
+
+    def _knowledge_points_from_path(self, db: Session, path_id: int | None) -> list[str]:
+        if path_id is None:
+            return []
+        nodes = db.query(LearningPathNode).filter(LearningPathNode.path_id == path_id).all()
+        points = []
+        for node in nodes:
+            title = node.title or node.objective
+            if title:
+                points.append(title.split()[0])
+        return points[:5]
 
 
 learning_service = LearningService()

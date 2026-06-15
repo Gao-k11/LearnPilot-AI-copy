@@ -110,8 +110,12 @@ def run_builtin_evaluation(root: Path, write_report: bool = True) -> dict:
     summary["details"] = rows
     if write_report:
         report_dir = root / "reports"
-        report_dir.mkdir(parents=True, exist_ok=True)
-        (report_dir / "evaluation_report.md").write_text(_markdown_report(summary), encoding="utf-8")
+        try:
+            report_dir.mkdir(parents=True, exist_ok=True)
+            (report_dir / "evaluation_report.md").write_text(_markdown_report(summary), encoding="utf-8")
+            summary["report_path"] = str(report_dir / "evaluation_report.md")
+        except OSError as exc:
+            summary["report_warning"] = f"evaluation report was not written: {exc}"
     return summary
 
 

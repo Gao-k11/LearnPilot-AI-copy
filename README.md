@@ -4,6 +4,8 @@ LearnPilot-AI 是面向“中国软件杯”A3 赛题“基于大模型的个性
 
 当前仓库包含主后端 `backend/` 与 ML 服务 `ml/` 两部分。前端调用主后端业务接口，主后端会把数据库中的课程、知识点、课程资源和学生历史画像转换为 ML 请求，再由 ML 服务完成推荐、路径规划、RAG 学习卡生成和质量评估。
 
+当前后端已加入生产化基础能力：JWT 认证与角色权限、课程资料/题库导入、资源切片与检索证据落库、学习反馈事件、细分健康检查、Redis/RQ 任务运行环境、Docker Compose 部署模板，以及 DashScope Qwen 真实生成入口。
+
 ## 项目目标
 
 在传统在线学习系统中，学习资源往往以固定目录或人工标签组织，难以根据学生的真实掌握情况动态调整。LearnPilot-AI 的目标是利用大模型和多智能体协作能力，把“测评诊断、学习画像、资源匹配、路径规划、内容生成、反馈更新”串成闭环，为不同基础、目标和偏好的学生生成个性化学习方案。
@@ -206,6 +208,16 @@ POST http://127.0.0.1:8001/api/v1/learning/start
 ```
 
 如果 ML 服务未启动、超时或大模型不可用，主后端会自动回退到本地 Agent 流程；如果只是 ML 返回了部分字段，后端只补齐缺失的资源或路径，不会丢弃已返回的 ML 结果。
+
+### 7. Docker 生产化启动
+
+```powershell
+Copy-Item .env.production.example .env
+# 修改 MYSQL_PASSWORD、JWT_SECRET_KEY、DASHSCOPE_API_KEY 等生产配置
+docker compose up --build
+```
+
+包含服务：`backend`、`ml-service`、`mysql`、`redis`、`worker`。生产模式推荐配置真实 `DASHSCOPE_API_KEY`；未配置时仅适合 demo fallback。
 
 ## API 说明
 

@@ -1,0 +1,14 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+ENV PYTHONUNBUFFERED=1
+
+COPY backend/requirements.txt /app/backend/requirements.txt
+COPY ml/requirements.txt /app/ml/requirements.txt
+RUN pip install --no-cache-dir -r /app/backend/requirements.txt -r /app/ml/requirements.txt
+
+COPY backend /app/backend
+COPY ml /app/ml
+
+ENV PYTHONPATH=/app/backend:/app/ml/src
+CMD ["rq", "worker", "--url", "redis://redis:6379/0", "default"]

@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, JSON, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.core.database import Base
@@ -19,6 +19,7 @@ class User(TimestampMixin, Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     username: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     display_name: Mapped[str | None] = mapped_column(String(64))
+    password_hash: Mapped[str | None] = mapped_column(String(255))
     role: Mapped[str] = mapped_column(String(32), default="student", nullable=False)
 
 
@@ -55,6 +56,10 @@ class CourseResource(TimestampMixin, Base):
     resource_type: Mapped[str] = mapped_column(String(32), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     source: Mapped[str | None] = mapped_column(String(255))
+    source_type: Mapped[str] = mapped_column(String(32), default="manual", nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="active", nullable=False)
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    resource_metadata: Mapped[dict | None] = mapped_column("metadata", JSON)
 
 
 class StudentProfile(TimestampMixin, Base):
@@ -70,6 +75,11 @@ class StudentProfile(TimestampMixin, Base):
     cognitive_style: Mapped[str | None] = mapped_column(String(128))
     knowledge_level: Mapped[str | None] = mapped_column(String(64))
     raw_text: Mapped[str] = mapped_column(Text, nullable=False)
+    mastery: Mapped[dict | None] = mapped_column(JSON)
+    weak_points_json: Mapped[list | None] = mapped_column(JSON)
+    engagement_score: Mapped[float | None] = mapped_column(Float)
+    forgetting_risk: Mapped[float | None] = mapped_column(Float)
+    learning_stage: Mapped[str | None] = mapped_column(String(64))
 
 
 class StudentWeakness(TimestampMixin, Base):
@@ -129,6 +139,76 @@ class EvaluationResult(TimestampMixin, Base):
     mastery_score: Mapped[float] = mapped_column(Float, nullable=False)
     feedback: Mapped[str] = mapped_column(Text, nullable=False)
     profile_update: Mapped[dict | None] = mapped_column(JSON)
+
+
+class ImportJob(TimestampMixin, Base):
+    __tablename__ = "import_job"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    course_id: Mapped[int] = mapped_column(ForeignKey("course.id"), nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False)
+    source_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False)
+    message: Mapped[str | None] = mapped_column(Text)
+    result: Mapped[dict | None] = mapped_column(JSON)
+
+
+class ResourceChunk(TimestampMixin, Base):
+    __tablename__ = "resource_chunk"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    resource_id: Mapped[int] = mapped_column(ForeignKey("course_resource.id"), nullable=False)
+    course_id: Mapped[int] = mapped_column(ForeignKey("course.id"), nullable=False)
+    chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    token_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    embedding: Mapped[list | None] = mapped_column(JSON)
+    keywords: Mapped[list | None] = mapped_column(JSON)
+
+
+class Question(TimestampMixin, Base):
+    __tablename__ = "question"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    course_id: Mapped[int] = mapped_column(ForeignKey("course.id"), nullable=False)
+    knowledge_point_id: Mapped[int | None] = mapped_column(ForeignKey("knowledge_point.id"))
+    question_type: Mapped[str] = mapped_column(String(32), default="short_answer", nullable=False)
+    stem: Mapped[str] = mapped_column(Text, nullable=False)
+    answer: Mapped[str | None] = mapped_column(Text)
+    explanation: Mapped[str | None] = mapped_column(Text)
+    difficulty: Mapped[float] = mapped_column(Float, default=0.5, nullable=False)
+    source: Mapped[str | None] = mapped_column(String(255))
+
+
+class StudentAnswer(TimestampMixin, Base):
+    __tablename__ = "student_answer"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False)
+    course_id: Mapped[int | None] = mapped_column(ForeignKey("course.id"))
+    question_id: Mapped[int | None] = mapped_column(ForeignKey("question.id"))
+    knowledge_point: Mapped[str | None] = mapped_column(String(128))
+    answer: Mapped[str | None] = mapped_column(Text)
+    score: Mapped[float | None] = mapped_column(Float)
+    correct: Mapped[bool | None] = mapped_column(Boolean)
+    elapsed_seconds: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+
+class FeedbackEvent(TimestampMixin, Base):
+    __tablename__ = "feedback_event"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False)
+    course_id: Mapped[int | None] = mapped_column(ForeignKey("course.id"))
+    resource_id: Mapped[int | None] = mapped_column(ForeignKey("learning_resource.id"))
+    path_id: Mapped[int | None] = mapped_column(ForeignKey("learning_path.id"))
+    knowledge_points: Mapped[list | None] = mapped_column(JSON)
+    score: Mapped[float | None] = mapped_column(Float)
+    completed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    dwell_seconds: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    liked: Mapped[bool | None] = mapped_column(Boolean)
+    event_metadata: Mapped[dict | None] = mapped_column("metadata", JSON)
 
 
 class ChatMessage(TimestampMixin, Base):
