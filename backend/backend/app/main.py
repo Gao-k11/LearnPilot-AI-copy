@@ -15,6 +15,7 @@ from backend.app.api.producer import router as producer_router
 from backend.app.api.path import router as path_router
 from backend.app.api.ml import router as ml_router
 from backend.app.api.resources import router as resources_router
+from backend.app.api.user import router as user_router
 from backend.app.core.config import get_settings
 from backend.app.core.database import (
     Base,
@@ -48,6 +49,7 @@ app.add_middleware(
 
 app.include_router(router)
 app.include_router(auth_router)
+app.include_router(user_router)
 app.include_router(admin_router)
 app.include_router(resources_router)
 app.include_router(profile_builder_router)

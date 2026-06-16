@@ -53,6 +53,10 @@ def ensure_user_columns() -> None:
     timestamp_type = "DATETIME" if dialect == "mysql" else "TIMESTAMP"
     columns = {
         "email": "VARCHAR(255) NULL",
+        "nickname": "VARCHAR(100) NULL DEFAULT ''",
+        "gender": "VARCHAR(20) NULL DEFAULT ''",
+        "phone": "VARCHAR(32) NULL DEFAULT ''",
+        "avatar": "TEXT NULL",
         "is_admin": "BOOLEAN NULL DEFAULT false",
         "status": "VARCHAR(32) NULL DEFAULT 'active'",
         "created_at": f"{timestamp_type} NULL",
