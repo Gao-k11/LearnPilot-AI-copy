@@ -7,7 +7,23 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.app.api.routes import router
+from backend.app.api.profile_builder import router as profile_builder_router
+from backend.app.api.profile import router as profile_router
+from backend.app.api.producer import router as producer_router
+from backend.app.api.path import router as path_router
+from backend.app.api.ml import router as ml_router
+from backend.app.api.resources import router as resources_router
 from backend.app.core.config import get_settings
+from backend.app.core.database import (
+    Base,
+    engine,
+    ensure_course_resource_columns,
+    ensure_learning_path_columns,
+    ensure_ml_profile_answer_columns,
+    ensure_producer_columns,
+    ensure_resource_center_columns,
+    ensure_student_profile_columns,
+)
 
 settings = get_settings()
 logging.basicConfig(level=getattr(logging, settings.log_level.upper(), logging.INFO))
@@ -28,6 +44,24 @@ app.add_middleware(
 )
 
 app.include_router(router)
+app.include_router(resources_router)
+app.include_router(profile_builder_router)
+app.include_router(producer_router)
+app.include_router(profile_router)
+app.include_router(path_router)
+app.include_router(ml_router)
+
+try:
+    Base.metadata.create_all(bind=engine)
+    ensure_student_profile_columns()
+    ensure_course_resource_columns()
+    ensure_resource_center_columns()
+    ensure_producer_columns()
+    ensure_learning_path_columns()
+    ensure_ml_profile_answer_columns()
+except Exception:
+    logger.exception("database schema initialization failed")
+    raise
 
 
 @app.middleware("http")

@@ -64,8 +64,8 @@ class ResourceImportService:
             content=clean,
             source=filename,
             source_type=source_type,
-            status="active",
-            version=1,
+            status="published",
+            version="v1",
             resource_metadata={"content_hash": hashlib.sha256(clean.encode("utf-8")).hexdigest()},
         )
         db.add(resource)

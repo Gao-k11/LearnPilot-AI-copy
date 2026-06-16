@@ -56,10 +56,32 @@ class CourseResource(TimestampMixin, Base):
     resource_type: Mapped[str] = mapped_column(String(32), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     source: Mapped[str | None] = mapped_column(String(255))
-    source_type: Mapped[str] = mapped_column(String(32), default="manual", nullable=False)
-    status: Mapped[str] = mapped_column(String(32), default="active", nullable=False)
-    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    source_type: Mapped[str | None] = mapped_column(String(64))
+    status: Mapped[str | None] = mapped_column(String(32), default="published")
+    version: Mapped[str | None] = mapped_column(String(32), default="v1")
     resource_metadata: Mapped[dict | None] = mapped_column("metadata", JSON)
+
+
+class ResourceCenter(TimestampMixin, Base):
+    __tablename__ = "resource_center"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    title: Mapped[str] = mapped_column(String(200), unique=True, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    resource_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    category: Mapped[str | None] = mapped_column(String(128))
+    content: Mapped[str | None] = mapped_column(Text)
+    url: Mapped[str | None] = mapped_column(String(1000))
+    cover_url: Mapped[str | None] = mapped_column(String(1000))
+    author: Mapped[str | None] = mapped_column(String(128))
+    views: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    likes: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="published", nullable=False)
+    open_type: Mapped[str] = mapped_column(String(32), default="content", nullable=False)
+    knowledge_point: Mapped[str | None] = mapped_column(String(128))
+    tags: Mapped[str | None] = mapped_column(String(255))
+    difficulty: Mapped[str | None] = mapped_column(String(32))
+    summary: Mapped[str | None] = mapped_column(Text)
 
 
 class StudentProfile(TimestampMixin, Base):
@@ -80,6 +102,76 @@ class StudentProfile(TimestampMixin, Base):
     engagement_score: Mapped[float | None] = mapped_column(Float)
     forgetting_risk: Mapped[float | None] = mapped_column(Float)
     learning_stage: Mapped[str | None] = mapped_column(String(64))
+
+
+class ProfileBuilderSession(TimestampMixin, Base):
+    __tablename__ = "profile_builder_session"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    session_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("user.id"))
+    current_step: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="active", nullable=False)
+    result_profile_json: Mapped[dict | None] = mapped_column(JSON)
+
+
+class ProfileBuilderMessage(Base):
+    __tablename__ = "profile_builder_message"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    session_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    role: Mapped[str] = mapped_column(String(32), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class MLProfileAnswer(Base):
+    __tablename__ = "ml_profile_answer"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("user.id"))
+    session_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    question_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    question: Mapped[str | None] = mapped_column(Text)
+    answer: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class ProducerTask(TimestampMixin, Base):
+    __tablename__ = "producer_task"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    task_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("user.id"))
+    topic: Mapped[str] = mapped_column(String(255), nullable=False)
+    requirement: Mapped[str | None] = mapped_column(Text)
+    task_type: Mapped[str] = mapped_column(String(64), default="multi_agent_generation", nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False)
+    progress: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    result_json: Mapped[dict | None] = mapped_column(JSON)
+    error_message: Mapped[str | None] = mapped_column(Text)
+
+
+class ProducerArtifact(TimestampMixin, Base):
+    __tablename__ = "producer_artifact"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    task_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    artifact_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    content: Mapped[str | None] = mapped_column(Text)
+    url: Mapped[str | None] = mapped_column(String(512))
+    metadata_json: Mapped[dict | None] = mapped_column(JSON)
+
+
+class ProducerChatMessage(Base):
+    __tablename__ = "producer_chat_message"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    session_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    role: Mapped[str] = mapped_column(String(32), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
 
 class StudentWeakness(TimestampMixin, Base):
@@ -115,6 +207,7 @@ class LearningPath(TimestampMixin, Base):
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     goal: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(32), default="active", nullable=False)
+    progress: Mapped[float] = mapped_column(Float, default=0, nullable=False)
 
 
 class LearningPathNode(TimestampMixin, Base):
@@ -126,8 +219,33 @@ class LearningPathNode(TimestampMixin, Base):
     step_order: Mapped[int] = mapped_column(Integer, nullable=False)
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     objective: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    level: Mapped[str | None] = mapped_column(String(64))
     estimated_minutes: Mapped[int] = mapped_column(Integer, default=30, nullable=False)
-    status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="not_started", nullable=False)
+
+
+class PathNodeProgress(TimestampMixin, Base):
+    __tablename__ = "path_node_progress"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    path_id: Mapped[int] = mapped_column(ForeignKey("learning_path.id"), nullable=False, index=True)
+    node_id: Mapped[int] = mapped_column(ForeignKey("learning_path_node.id"), nullable=False, index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("user.id"))
+    completed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="not_started", nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+
+class PathFeedback(Base):
+    __tablename__ = "path_feedback"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    path_id: Mapped[int] = mapped_column(ForeignKey("learning_path.id"), nullable=False, index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("user.id"))
+    rating: Mapped[int] = mapped_column(Integer, nullable=False)
+    comment: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
 
 class EvaluationResult(TimestampMixin, Base):

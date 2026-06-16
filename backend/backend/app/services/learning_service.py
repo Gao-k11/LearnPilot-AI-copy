@@ -25,6 +25,15 @@ from backend.app.models import (
 
 
 class LearningService:
+    REQUIRED_RESOURCE_TYPES = (
+        "lecture",
+        "exercise",
+        "mind_map",
+        "reading",
+        "code_example",
+        "video_script",
+    )
+
     def __init__(self) -> None:
         self.profile_agent = ProfileAgent()
         self.diagnosis_agent = DiagnosisAgent()
@@ -228,6 +237,11 @@ class LearningService:
 
         resource_items = self._extract_ml_resources(ml_result)
         if resource_items:
+            resource_items = self._ensure_resource_type_coverage(
+                resource_items,
+                profile.get("course") or "课程学习",
+                weak_points,
+            )
             resources = self.save_resource_items(db, user_id, course_id, resource_items)
         else:
             reference_titles = self.retrieve_course_resources(db, course_id, weak_points)
@@ -237,7 +251,7 @@ class LearningService:
                 course_id,
                 profile.get("course") or "课程学习",
                 weak_points,
-                ["lecture", "mind_map", "exercise", "reading", "code_example", "video_script"],
+                list(self.REQUIRED_RESOURCE_TYPES),
                 reference_titles,
             )
 
@@ -281,7 +295,7 @@ class LearningService:
             course_id,
             topic,
             weak_points,
-            ["lecture", "mind_map", "exercise", "reading", "code_example", "video_script"],
+            list(self.REQUIRED_RESOURCE_TYPES),
             reference_titles,
         )
         path, nodes = self.plan_path(
@@ -399,33 +413,29 @@ class LearningService:
         return weak_points
 
     def _extract_ml_resources(self, data: dict[str, Any]) -> list[dict]:
-        raw_items = (
-            data.get("resources")
-            or data.get("generated_cards")
-            or data.get("cards")
-            or data.get("learning_resources")
-            or data.get("recommendations")
-            or data.get("result", {}).get("resources")
-            or data.get("result", {}).get("generated_cards")
-            or data.get("result", {}).get("recommendations")
-            or data.get("data", {}).get("resources")
-            or data.get("data", {}).get("generated_cards")
-            or data.get("data", {}).get("recommendations")
-            or []
-        )
-        if isinstance(raw_items, dict):
-            raw_items = list(raw_items.values())
+        raw_items = []
+        containers = [
+            data,
+            data.get("result") if isinstance(data.get("result"), dict) else {},
+            data.get("data") if isinstance(data.get("data"), dict) else {},
+        ]
+        for container in containers:
+            for key in ("resources", "generated_cards", "cards", "learning_resources", "recommendations"):
+                value = container.get(key)
+                if isinstance(value, dict):
+                    raw_items.extend(value.values())
+                elif isinstance(value, list):
+                    raw_items.extend(value)
 
         resources = []
+        seen = set()
         for index, item in enumerate(raw_items, start=1):
             if isinstance(item, str):
-                resources.append(
-                    {
-                        "title": f"ML 生成资源 {index}",
-                        "resource_type": "reading",
-                        "content": item,
-                    }
-                )
+                resource = {
+                    "title": f"ML 生成资源 {index}",
+                    "resource_type": "reading",
+                    "content": item,
+                }
             elif isinstance(item, dict):
                 content = (
                     item.get("content")
@@ -436,13 +446,42 @@ class LearningService:
                 )
                 if not content:
                     continue
-                resources.append(
-                    {
-                        "title": str(item.get("title") or item.get("name") or f"ML 生成资源 {index}"),
-                        "resource_type": str(item.get("resource_type") or item.get("type") or "reading"),
-                        "content": str(content),
-                    }
-                )
+                resource = {
+                    "title": str(item.get("title") or item.get("name") or f"ML 生成资源 {index}"),
+                    "resource_type": str(item.get("resource_type") or item.get("type") or "reading"),
+                    "content": str(content),
+                }
+            else:
+                continue
+
+            identity = (resource["title"], resource["resource_type"], resource["content"])
+            if identity not in seen:
+                seen.add(identity)
+                resources.append(resource)
+        return resources
+
+    def _ensure_resource_type_coverage(
+        self,
+        ml_resources: list[dict],
+        topic: str,
+        weak_points: list[str],
+    ) -> list[dict]:
+        resources = list(ml_resources)
+        existing_types = {
+            str(item.get("resource_type") or "").strip().lower()
+            for item in resources
+            if isinstance(item, dict)
+        }
+        missing_types = [
+            resource_type
+            for resource_type in self.REQUIRED_RESOURCE_TYPES
+            if resource_type not in existing_types
+        ]
+        if not missing_types:
+            return resources
+
+        generated = self.resource_agent.run(topic, weak_points, missing_types)
+        resources.extend(generated)
         return resources
 
     def _ml_card_to_content(self, item: dict) -> str:

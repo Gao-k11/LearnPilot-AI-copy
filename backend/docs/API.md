@@ -4,6 +4,157 @@
 
 `http://127.0.0.1:8001/docs`
 
+## ML Compatibility APIs
+
+- `GET /api/ml/profile/current?userId=1` returns the latest profile or a default profile.
+- `GET /api/ml/profile/questions` returns the six builder question definitions.
+- `POST /api/ml/profile/answer` stores one answer and optional batched answers under an automatically generated or supplied session ID.
+- `POST /api/ml/profile/generate` extracts and persists an eight-field learner profile.
+- `POST /api/ml/learning-path/generate` delegates to the existing personalized path generator.
+
+When an Authorization Bearer token is supplied, its user ID takes priority. Without authentication or `userId`, demo endpoints default to user ID `1`.
+
+## Personalized Profile And Path
+
+Profile endpoints:
+
+- `GET /profile/schema`
+- `GET /profile/get?userId=1`
+- `POST /profile/update`
+
+`POST /profile/update` accepts a `userId` and a `profile` object. It updates the latest `student_profile` record or creates one when needed.
+
+Path endpoints:
+
+- `POST /path/generate`
+- `GET /path/detail?pathId=1`
+- `GET /path/list?userId=1`
+- `DELETE /path/delete?pathId=1`
+- `POST /path/progress/update`
+- `GET /path/progress?pathId=1`
+- `GET /path/resources?nodeId=1`
+- `GET /path/recommend?userId=1`
+- `POST /path/feedback`
+
+Path and node responses expose camelCase `pathId` and `nodeId`, with numeric `path_id` and `node_id` compatibility fields. Path generation tries the configured ML path service first and falls back to local generation.
+
+Document recommendations use:
+
+```json
+{
+  "open_type": "url",
+  "url": "/resources/7/view",
+  "detail_url": "/resources/7"
+}
+```
+
+`GET /resources/{id}/view` returns the complete resource detail and Markdown content while incrementing the view count.
+
+## Multi-Agent Producer
+
+`POST /producer/task`
+
+```json
+{
+  "topic": "CNN",
+  "requirement": "生成适合大二学生的学习资源",
+  "types": ["lecture", "mind_map", "exercise", "video", "code"]
+}
+```
+
+The task is completed synchronously and persisted to `producer_task` and `producer_artifact`. Its result includes `lecture`, `mind_map`, `exercises`, `reading`, `videos`, `code_examples`, `datasets`, `roadmap`, reused resource-center references, and five `agent_traces`.
+
+`GET /producer/task/{task_id}`
+
+Returns status, progress, and timestamps.
+
+`GET /producer/result/{task_id}`
+
+Returns the persisted multi-agent generation result.
+
+`POST /producer/chat`
+
+```json
+{
+  "session_id": "",
+  "message": "什么是 CNN？",
+  "topic": "CNN"
+}
+```
+
+The session ID is optional. User and assistant messages are persisted.
+
+Additional endpoints:
+
+- `GET /producer/roadmap?topic=CNN`
+- `GET /producer/exercises?topic=CNN`
+- `GET /producer/videos?topic=CNN`
+- `GET /producer/code?topic=CNN&language=python`
+- `GET /producer/datasets?keyword=CNN`
+
+`POST /producer/run`
+
+```json
+{
+  "language": "python",
+  "code": "print('hello')"
+}
+```
+
+This endpoint performs static parsing and returns simulated output. It never executes submitted code.
+
+## Resource Center
+
+`GET /resources`
+
+Each list item includes `open_type`, `detail_url`, and `url`.
+
+- For `document`, `open_type` is `content`, `url` is an empty string, and `detail_url` is `/resources/{id}`.
+- For `ppt` and `video`, `open_type` is `url`, and `url` contains the external courseware or video address.
+
+`GET /resources/{id}`
+
+Returns the full resource detail. A document response includes the complete Markdown `content`, which the frontend should render on its detail page. PPT and video resources should be opened through `url`.
+
+`POST /resources/{id}/view`
+
+Increments and returns the latest view count.
+
+`POST /resources/{id}/like`
+
+Increments and returns the latest like count.
+
+## Profile Builder
+
+`POST /profile-builder/start`
+
+Creates an anonymous or authenticated profile-building session and returns the first question.
+
+`POST /profile-builder/answer`
+
+```json
+{
+  "session_id": "session-id",
+  "answer": "我是软件工程大二学生，正在学习人工智能。"
+}
+```
+
+Continue submitting answers until `finished` becomes `true`. The conversation collects `major`, `grade`, `course`, `goal`, `weak_points`, `preference`, `cognitive_style`, and `knowledge_level`.
+
+`GET /profile-builder/result?session_id=session-id`
+
+Returns the current or completed profile for the session.
+
+`POST /profile-builder/regenerate`
+
+```json
+{
+  "session_id": "session-id"
+}
+```
+
+Rebuilds the profile from all existing user answers. If the session was started with a valid Bearer token, the completed profile is also synchronized to `student_profile`.
+
 ## 健康检查
 
 `GET /health`

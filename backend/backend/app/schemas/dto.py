@@ -169,7 +169,7 @@ class CourseResourceOut(BaseModel):
     source: str | None = None
     source_type: str
     status: str
-    version: int
+    version: str
 
 
 class QuestionOut(BaseModel):

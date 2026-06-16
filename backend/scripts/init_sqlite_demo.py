@@ -13,7 +13,18 @@ os.environ.setdefault("DATABASE_MODE", "sqlite")
 os.environ.setdefault("SQLITE_DATABASE_URL", "sqlite:///./learning_agent_demo.db")
 os.environ.setdefault("USE_ML_SERVICE", "false")
 
-from backend.app.core.database import Base, SessionLocal, engine
+from backend.app import models as _models  # noqa: F401
+from backend.app.core.database import (
+    Base,
+    SessionLocal,
+    engine,
+    ensure_course_resource_columns,
+    ensure_learning_path_columns,
+    ensure_ml_profile_answer_columns,
+    ensure_producer_columns,
+    ensure_resource_center_columns,
+    ensure_student_profile_columns,
+)
 from backend.app.models import Course, CourseResource, KnowledgePoint, User
 
 
@@ -113,6 +124,12 @@ def upsert_resource(session, item: tuple[int, int, int | None, str, str, str]) -
 
 def init_demo_data() -> None:
     Base.metadata.create_all(bind=engine)
+    ensure_student_profile_columns()
+    ensure_course_resource_columns()
+    ensure_resource_center_columns()
+    ensure_producer_columns()
+    ensure_learning_path_columns()
+    ensure_ml_profile_answer_columns()
     with SessionLocal() as session:
         user = session.get(User, 1)
         if user is None:

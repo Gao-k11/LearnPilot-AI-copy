@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     app_port: int = Field(default=8001, alias="APP_PORT")
 
     database_mode: str = Field(default="mysql", alias="DATABASE_MODE")
+    postgres_database_url: str | None = Field(default=None, alias="DATABASE_URL")
     sqlite_database_url: str = Field(default="sqlite:///./learning_agent_demo.db", alias="SQLITE_DATABASE_URL")
 
     mysql_host: str = Field(default="127.0.0.1", alias="MYSQL_HOST")
@@ -34,8 +35,17 @@ class Settings(BaseSettings):
 
     @property
     def database_url(self) -> str:
-        if self.database_mode.lower() == "sqlite":
+        mode = self.database_mode.lower()
+        if mode == "sqlite":
             return self.sqlite_database_url
+        if mode == "postgres":
+            if not self.postgres_database_url:
+                raise ValueError("DATABASE_URL is required when DATABASE_MODE=postgres")
+            if self.postgres_database_url.startswith("postgres://"):
+                return self.postgres_database_url.replace("postgres://", "postgresql+psycopg2://", 1)
+            if self.postgres_database_url.startswith("postgresql://"):
+                return self.postgres_database_url.replace("postgresql://", "postgresql+psycopg2://", 1)
+            return self.postgres_database_url
         return (
             f"mysql+pymysql://{self.mysql_user}:{self.mysql_password}"
             f"@{self.mysql_host}:{self.mysql_port}/{self.mysql_database}?charset=utf8mb4"

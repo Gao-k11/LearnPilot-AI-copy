@@ -1,5 +1,60 @@
 # Learning Agent Backend
 
+## ML Compatibility APIs
+
+The latest `path.js` and `builder.js` clients can use:
+
+- `GET /api/ml/profile/current`
+- `GET /api/ml/profile/questions`
+- `POST /api/ml/profile/answer`
+- `POST /api/ml/profile/generate`
+- `POST /api/ml/learning-path/generate`
+
+These endpoints reuse the existing profile extraction, profile persistence, and `/path/generate` logic. Bearer authentication is optional for demo usage; when present, the authenticated user takes priority over `userId`.
+
+## Personalized Learning Paths
+
+The `path.js` integration is available through:
+
+- `GET /profile/schema`, `GET /profile/get`, and `POST /profile/update`
+- `POST /path/generate`, `GET /path/detail`, `GET /path/list`, and `DELETE /path/delete`
+- `POST /path/progress/update` and `GET /path/progress`
+- `GET /path/resources`, `GET /path/recommend`, and `POST /path/feedback`
+
+Path generation uses the existing ML path adapter when enabled and available, then falls back to local structured generation. Node resources reuse `resource_center`; document resources are exposed as `/resources/{id}/view`, while PPT and video resources keep their external URLs.
+
+## Multi-Agent Producer
+
+The `/producer` module provides synchronous multi-agent learning material generation for `producter.js`:
+
+- `POST /producer/task` creates a completed generation task and persists its artifacts.
+- `GET /producer/task/{task_id}` and `GET /producer/result/{task_id}` return task state and generated results.
+- `POST /producer/chat` stores user and assistant messages.
+- Roadmap, exercises, videos, code examples, and datasets have dedicated query endpoints.
+- Video and reference generation first searches `resource_center`, then uses public fallback resources.
+- `POST /producer/run` only simulates output. It never executes arbitrary user code.
+
+Producer results include traces for requirement analysis, resource generation, exercise generation, code generation, and quality evaluation agents.
+
+## Resource Center Opening Rules
+
+The resource center exposes `GET /resources` and `GET /resources/{id}`.
+
+- `document`: `open_type=content`, `url=""`. Open `detail_url` and render the complete Markdown `content` returned by the detail endpoint.
+- `ppt` and `video`: `open_type=url`. Open the external `url`; `detail_url` remains available for metadata and detail display.
+- Document resources never receive placeholder or fake URLs.
+
+## Conversational Profile Builder
+
+The frontend can build a learner profile through:
+
+- `POST /profile-builder/start`
+- `POST /profile-builder/answer`
+- `GET /profile-builder/result?session_id=...`
+- `POST /profile-builder/regenerate`
+
+The six-round conversation collects major, grade, course, goal, weak points, learning preference, cognitive style, and knowledge level. Anonymous sessions are supported. When a valid Bearer token is supplied to the start endpoint, the completed result is also synchronized to `student_profile`.
+
 基于大模型的个性化资源生成与学习多智能体系统后端。当前版本使用 FastAPI + MySQL，LLM 和 ML 能力先通过 Mock 适配器实现，后续可以直接替换 `backend/app/adapters/llm_adapter.py` 和 `backend/app/adapters/ml_adapter.py`。
 
 ## 目录结构
