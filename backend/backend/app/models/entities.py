@@ -17,10 +17,13 @@ class User(TimestampMixin, Base):
     __tablename__ = "user"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    username: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    username: Mapped[str] = mapped_column(String(64), nullable=False)
     display_name: Mapped[str | None] = mapped_column(String(64))
+    email: Mapped[str | None] = mapped_column(String(255), unique=True)
     password_hash: Mapped[str | None] = mapped_column(String(255))
     role: Mapped[str] = mapped_column(String(32), default="student", nullable=False)
+    is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="active", nullable=False)
 
 
 class Course(TimestampMixin, Base):

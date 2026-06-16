@@ -94,12 +94,17 @@ def health() -> dict:
 
 @router.post("/api/v1/auth/register", response_model=AuthResponse, tags=["auth"])
 def register(payload: AuthRegisterRequest, db: Session = Depends(get_db)) -> AuthResponse:
-    if db.query(User).filter(User.username == payload.username).first():
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Username already exists")
+    email = payload.email.strip() if payload.email else None
+    if email and db.query(User).filter(User.email == email).first():
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already exists")
+    is_admin = payload.username == "admin" or payload.role == "admin"
     user = User(
         username=payload.username,
         display_name=payload.display_name or payload.username,
-        role=payload.role,
+        email=email,
+        role="admin" if is_admin else payload.role,
+        is_admin=is_admin,
+        status="active",
         password_hash=hash_password(payload.password),
     )
     db.add(user)

@@ -41,6 +41,60 @@ def check_database() -> bool:
         return False
 
 
+def ensure_user_columns() -> None:
+    inspector = inspect(engine)
+    if "user" not in inspector.get_table_names():
+        return
+
+    column_names = {column["name"] for column in inspector.get_columns("user")}
+    dialect = engine.dialect.name
+    quote = "`" if dialect == "mysql" else '"'
+    table_name = f"{quote}user{quote}"
+    timestamp_type = "DATETIME" if dialect == "mysql" else "TIMESTAMP"
+    columns = {
+        "email": "VARCHAR(255) NULL",
+        "is_admin": "BOOLEAN NULL DEFAULT false",
+        "status": "VARCHAR(32) NULL DEFAULT 'active'",
+        "created_at": f"{timestamp_type} NULL",
+        "updated_at": f"{timestamp_type} NULL",
+    }
+
+    with engine.begin() as connection:
+        for column_name, column_type in columns.items():
+            if column_name not in column_names:
+                quoted_column = f"{quote}{column_name}{quote}"
+                connection.execute(
+                    text(f"ALTER TABLE {table_name} ADD COLUMN {quoted_column} {column_type}")
+                )
+        if dialect in {"mysql", "postgresql"}:
+            username_indexes = {
+                index["name"]
+                for index in inspector.get_indexes("user")
+                if index.get("unique") and index.get("column_names") == ["username"]
+            }
+            username_constraints = {
+                constraint["name"]
+                for constraint in inspector.get_unique_constraints("user")
+                if constraint.get("name") and constraint.get("column_names") == ["username"]
+            }
+
+            for constraint_name in username_constraints:
+                quoted_constraint = f"{quote}{constraint_name}{quote}"
+                if dialect == "mysql":
+                    connection.execute(text(f"ALTER TABLE {table_name} DROP INDEX {quoted_constraint}"))
+                else:
+                    connection.execute(
+                        text(f"ALTER TABLE {table_name} DROP CONSTRAINT IF EXISTS {quoted_constraint}")
+                    )
+
+            for index_name in username_indexes - username_constraints:
+                quoted_index = f"{quote}{index_name}{quote}"
+                if dialect == "mysql":
+                    connection.execute(text(f"ALTER TABLE {table_name} DROP INDEX {quoted_index}"))
+                else:
+                    connection.execute(text(f"DROP INDEX IF EXISTS {quoted_index}"))
+
+
 def ensure_student_profile_columns() -> None:
     inspector = inspect(engine)
     if "student_profile" not in inspector.get_table_names():

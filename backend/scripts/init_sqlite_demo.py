@@ -24,6 +24,7 @@ from backend.app.core.database import (
     ensure_producer_columns,
     ensure_resource_center_columns,
     ensure_student_profile_columns,
+    ensure_user_columns,
 )
 from backend.app.models import Course, CourseResource, KnowledgePoint, User
 
@@ -124,6 +125,7 @@ def upsert_resource(session, item: tuple[int, int, int | None, str, str, str]) -
 
 def init_demo_data() -> None:
     Base.metadata.create_all(bind=engine)
+    ensure_user_columns()
     ensure_student_profile_columns()
     ensure_course_resource_columns()
     ensure_resource_center_columns()

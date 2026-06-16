@@ -21,11 +21,13 @@ from backend.app.core.database import (
     ensure_producer_columns,
     ensure_resource_center_columns,
     ensure_student_profile_columns,
+    ensure_user_columns,
 )
 
 
 def init_postgres_schema() -> None:
     Base.metadata.create_all(bind=engine)
+    ensure_user_columns()
     ensure_student_profile_columns()
     ensure_course_resource_columns()
     ensure_resource_center_columns()

@@ -7,6 +7,8 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.app.api.routes import router
+from backend.app.api.admin import router as admin_router
+from backend.app.api.auth import router as auth_router
 from backend.app.api.profile_builder import router as profile_builder_router
 from backend.app.api.profile import router as profile_router
 from backend.app.api.producer import router as producer_router
@@ -23,6 +25,7 @@ from backend.app.core.database import (
     ensure_producer_columns,
     ensure_resource_center_columns,
     ensure_student_profile_columns,
+    ensure_user_columns,
 )
 
 settings = get_settings()
@@ -44,6 +47,8 @@ app.add_middleware(
 )
 
 app.include_router(router)
+app.include_router(auth_router)
+app.include_router(admin_router)
 app.include_router(resources_router)
 app.include_router(profile_builder_router)
 app.include_router(producer_router)
@@ -53,6 +58,7 @@ app.include_router(ml_router)
 
 try:
     Base.metadata.create_all(bind=engine)
+    ensure_user_columns()
     ensure_student_profile_columns()
     ensure_course_resource_columns()
     ensure_resource_center_columns()
