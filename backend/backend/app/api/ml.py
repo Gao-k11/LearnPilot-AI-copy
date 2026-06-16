@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Query
@@ -74,10 +75,15 @@ QUESTIONS = [
 QUESTION_INDEX = {
     "major_grade_course": 0,
     "basic_info": 0,
+    "major": 0,
+    "grade": 0,
+    "course": 0,
     "goal": 1,
     "weak_points": 2,
     "preference": 3,
+    "style": 4,
     "cognitive_style": 4,
+    "foundation": 5,
     "knowledge_level": 5,
 }
 
@@ -154,6 +160,68 @@ def _answers_for_builder(answers: list[AnswerItem]) -> list[str]:
     return ordered
 
 
+def _split_weak_points(answer: str) -> list[str]:
+    parts = re.split(r"\s*(?:、|，|,|；|;|和|与|及|以及)\s*", answer.strip())
+    result = []
+    for part in parts:
+        item = part.strip(" \t\r\n。.!！?？")
+        if item and item not in result:
+            result.append(item)
+    return result
+
+
+def _normalize_cognitive_style(answer: str) -> str:
+    if "循序渐进" in answer:
+        return "循序渐进型"
+    if "案例" in answer:
+        return "案例驱动型"
+    if "实践" in answer or "实操" in answer or "代码" in answer:
+        return "实践优先型"
+    if "图解" in answer or "可视化" in answer:
+        return "图解理解型"
+    return answer.strip()
+
+
+def _knowledge_level_from_foundation(answer: str) -> str:
+    if any(keyword in answer for keyword in ("基础弱", "比较弱", "零基础")):
+        return "foundation"
+    if any(keyword in answer for keyword in ("学过", "了解")):
+        return "basic"
+    return "unknown"
+
+
+def _profile_from_answers(answers: list[AnswerItem]) -> dict:
+    profile = _build_profile(_answers_for_builder(answers))
+    for item in answers:
+        question_id = (item.question_id or "").strip().lower()
+        answer = item.answer.strip()
+        if not answer:
+            continue
+
+        if question_id == "major":
+            profile["major"] = answer
+        elif question_id == "grade":
+            profile["grade"] = answer
+        elif question_id == "course":
+            profile["course"] = answer
+        elif question_id == "goal":
+            profile["goal"] = answer
+        elif question_id == "weak_points":
+            profile["weak_points"] = _split_weak_points(answer)
+        elif question_id == "preference":
+            profile["preference"] = answer
+        elif question_id in {"style", "cognitive_style"}:
+            profile["cognitive_style"] = _normalize_cognitive_style(answer)
+        elif question_id in {"foundation", "knowledge_level"}:
+            profile["knowledge_level"] = _knowledge_level_from_foundation(answer)
+
+    profile["weak_points"] = list(profile.get("weak_points") or [])
+    profile["preference"] = profile.get("preference") or "混合资源"
+    profile["cognitive_style"] = profile.get("cognitive_style") or "循序渐进型"
+    profile["knowledge_level"] = profile.get("knowledge_level") or "unknown"
+    return profile
+
+
 @router.get("/profile/current")
 def get_current_ml_profile(
     userId: int | None = Query(default=None, gt=0),
@@ -204,10 +272,9 @@ def generate_ml_profile(
 ) -> dict:
     user_id = _resolved_user_id(current_user, payload.userId)
     session_id = payload.session_id or uuid4().hex
-    profile = _build_profile(_answers_for_builder(payload.answers))
+    profile = _profile_from_answers(payload.answers)
     profile["preference"] = profile["preference"] or "混合资源"
     profile["cognitive_style"] = profile["cognitive_style"] or "循序渐进型"
-    profile["knowledge_level"] = profile["knowledge_level"] or "foundation"
     try:
         _save_answers(db, session_id, user_id, payload.answers)
         db_profile = upsert_profile(db, user_id, profile)
@@ -220,7 +287,7 @@ def generate_ml_profile(
         "success": True,
         "userId": str(user_id),
         "profile": {
-            key: profile_payload(db_profile)[key]
+            key: profile[key]
             for key in (
                 "major",
                 "grade",
