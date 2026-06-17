@@ -80,6 +80,7 @@ QUESTION_INDEX = {
     "course": 0,
     "goal": 1,
     "weak_points": 2,
+    "weakness": 2,
     "preference": 3,
     "style": 4,
     "cognitive_style": 4,
@@ -160,6 +161,16 @@ def _answers_for_builder(answers: list[AnswerItem]) -> list[str]:
     return ordered
 
 
+def _answers_by_id(answers: list[AnswerItem]) -> dict[str, str]:
+    result: dict[str, str] = {}
+    for item in answers:
+        question_id = (item.question_id or "").strip().lower()
+        answer = item.answer.strip()
+        if question_id and answer:
+            result[question_id] = answer
+    return result
+
+
 def _split_weak_points(answer: str) -> list[str]:
     parts = re.split(r"\s*(?:、|，|,|；|;|和|与|及|以及)\s*", answer.strip())
     result = []
@@ -190,6 +201,109 @@ def _knowledge_level_from_foundation(answer: str) -> str:
     return "unknown"
 
 
+def _preference_items(answer: str) -> list[str]:
+    aliases = ("视频", "文字", "讲义", "案例", "项目", "刷题", "练习题", "老师讲解", "代码")
+    result = [item for item in aliases if item in answer]
+    if result:
+        return result
+    return _split_weak_points(answer)
+
+
+def _knowledge_dashboard(foundation: str) -> list[dict]:
+    python_score = 80 if "Python" in foundation or "python" in foundation or "了解" in foundation else 55
+    ml_score = 55 if "机器学习" in foundation or "学过" in foundation else 45
+    dl_score = 35 if "深度学习" in foundation and any(key in foundation for key in ("弱", "薄弱")) else 45
+    return [
+        {"name": "Python", "value": python_score},
+        {"name": "机器学习", "value": ml_score},
+        {"name": "深度学习", "value": dl_score},
+    ]
+
+
+def _weak_point_risks(points: list[str]) -> list[dict]:
+    default_risks = [75, 80, 65, 60, 55]
+    return [
+        {"name": point, "risk": default_risks[index] if index < len(default_risks) else 60}
+        for index, point in enumerate(points)
+    ]
+
+
+def _engagement_dashboard(answer: str) -> list[dict]:
+    values = [65, 70, 60, 75, 68, 55, 50]
+    if re.search(r"(\d+(?:\.\d+)?)\s*小时", answer):
+        values = [70, 72, 68, 74, 70, 56, 52]
+    if "分心" in answer:
+        values = [max(value - 5, 0) for value in values]
+    if "周末" in answer and any(word in answer for word in ("少", "少一点", "较少")):
+        values[-2:] = [55, 50]
+    return [
+        {"day": day, "value": value}
+        for day, value in zip(("周一", "周二", "周三", "周四", "周五", "周六", "周日"), values, strict=False)
+    ]
+
+
+def _forgetting_risk(answer: str) -> list[dict]:
+    values = {"算法": 50, "CNN": 70, "反向传播": 75, "模型训练流程": 65}
+    return [
+        {"name": item, "value": values.get(item, 60)}
+        for item in _split_weak_points(answer)
+    ]
+
+
+def _feedback_dashboard(answer: str) -> dict:
+    tags = ["积极", "努力"]
+    if "案例" in answer and "案例学习" not in tags:
+        tags.append("案例学习")
+    if "基础" in answer and "基础优先" not in tags:
+        tags.append("基础优先")
+    return {
+        "analysis": answer or "学习目标清晰，建议保持稳定投入，并结合案例和练习逐步巩固。",
+        "tags": tags,
+    }
+
+
+def _dashboard_from_answers(profile: dict, answers: list[AnswerItem]) -> dict:
+    answer_map = _answers_by_id(answers)
+    foundation = answer_map.get("foundation", "")
+    weak_points = list(profile.get("weak_points") or [])
+    preference_text = profile.get("preference") or answer_map.get("preference", "")
+    preferences = _preference_items(preference_text)
+    forgetting = answer_map.get("forgetting", "")
+    forgetting_risk = _forgetting_risk(forgetting) if forgetting else [
+        {"name": item["name"], "value": item["risk"]} for item in _weak_point_risks(weak_points[:2])
+    ]
+    feedback = _feedback_dashboard(answer_map.get("feedback", ""))
+    cognition_main = profile.get("cognitive_style") or ("综合型" if len(preferences) >= 2 else "循序渐进型")
+    if cognition_main == "循序渐进型" and len(preferences) >= 2 and not answer_map.get("style"):
+        cognition_main = "综合型"
+
+    weak_text = "、".join(weak_points) or "核心知识点"
+    return {
+        "goal": {
+            "progress": 70,
+            "analysis": "当前目标明确，适合按照知识点分阶段推进。",
+        },
+        "knowledge": _knowledge_dashboard(foundation),
+        "weakPoints": _weak_point_risks(weak_points),
+        "preferences": preferences,
+        "cognition": {
+            "main": cognition_main,
+            "parts": [
+                {"name": "逻辑", "value": 60},
+                {"name": "实践", "value": 70},
+                {"name": "记忆", "value": 50},
+            ],
+        },
+        "engagement": _engagement_dashboard(answer_map.get("engagement", "")),
+        "forgettingRisk": forgetting_risk,
+        "feedback": feedback,
+        "summary": (
+            f"该学生专业方向为{profile.get('major') or '当前课程'}，目标是{profile.get('goal') or '提升学习效果'}。"
+            f"建议围绕{weak_text}生成讲义、练习题和代码案例。"
+        ),
+    }
+
+
 def _profile_from_answers(answers: list[AnswerItem]) -> dict:
     profile = _build_profile(_answers_for_builder(answers))
     for item in answers:
@@ -206,7 +320,7 @@ def _profile_from_answers(answers: list[AnswerItem]) -> dict:
             profile["course"] = answer
         elif question_id == "goal":
             profile["goal"] = answer
-        elif question_id == "weak_points":
+        elif question_id in {"weak_points", "weakness"}:
             profile["weak_points"] = _split_weak_points(answer)
         elif question_id == "preference":
             profile["preference"] = answer
@@ -217,6 +331,8 @@ def _profile_from_answers(answers: list[AnswerItem]) -> dict:
 
     profile["weak_points"] = list(profile.get("weak_points") or [])
     profile["preference"] = profile.get("preference") or "混合资源"
+    if not profile.get("cognitive_style") and len(_preference_items(profile["preference"])) >= 2:
+        profile["cognitive_style"] = "综合型"
     profile["cognitive_style"] = profile.get("cognitive_style") or "循序渐进型"
     profile["knowledge_level"] = profile.get("knowledge_level") or "unknown"
     return profile
@@ -275,6 +391,7 @@ def generate_ml_profile(
     profile = _profile_from_answers(payload.answers)
     profile["preference"] = profile["preference"] or "混合资源"
     profile["cognitive_style"] = profile["cognitive_style"] or "循序渐进型"
+    dashboard = _dashboard_from_answers(profile, payload.answers)
     try:
         _save_answers(db, session_id, user_id, payload.answers)
         db_profile = upsert_profile(db, user_id, profile)
@@ -299,6 +416,7 @@ def generate_ml_profile(
                 "knowledge_level",
             )
         },
+        "dashboard": dashboard,
     }
 
 
