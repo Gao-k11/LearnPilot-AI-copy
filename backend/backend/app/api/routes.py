@@ -11,8 +11,6 @@ from backend.app.schemas.dto import (
     AuthRegisterRequest,
     AuthResponse,
     CourseResourceOut,
-    EvaluationSubmitRequest,
-    EvaluationSubmitResponse,
     ImportJobOut,
     LearningStartRequest,
     LearningStartResponse,
@@ -244,42 +242,18 @@ def plan_path(payload: PathPlanRequest, db: Session = Depends(get_db)) -> PathPl
 
 @router.post("/api/v1/tutor/ask", response_model=TutorAskResponse, tags=["tutor"])
 def ask_tutor(
-    payload: TutorAskRequest, db: Session = Depends(get_db), current_user: User | None = Depends(optional_user)
+    payload: TutorAskRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> TutorAskResponse:
     answer = learning_service.ask_tutor(
         db,
-        resolve_user_id(payload.user_id, current_user),
+        current_user.id,
         payload.question,
         payload.profile.model_dump() if payload.profile else None,
         payload.history,
     )
     return TutorAskResponse(**answer)
-
-
-@router.post("/api/v1/evaluations/submit", response_model=EvaluationSubmitResponse, tags=["evaluation"])
-def submit_evaluation(
-    payload: EvaluationSubmitRequest,
-    db: Session = Depends(get_db),
-    current_user: User | None = Depends(optional_user),
-) -> EvaluationSubmitResponse:
-    user_id = resolve_user_id(payload.user_id, current_user)
-    evaluation = learning_service.evaluate(
-        db,
-        user_id,
-        payload.path_id,
-        payload.correct_count,
-        payload.total_count,
-        payload.completed_resource_count,
-        payload.study_minutes,
-    )
-    return EvaluationSubmitResponse(
-        evaluation_id=evaluation.id,
-        mastery_score=evaluation.mastery_score,
-        feedback=evaluation.feedback,
-        profile_update=evaluation.profile_update or {},
-        path_adjustment=(evaluation.profile_update or {}).get("path_adjustment"),
-        updated_profile=(evaluation.profile_update or {}).get("mastery") and evaluation.profile_update,
-    )
 
 
 @router.post("/api/v1/learning/start", response_model=LearningStartResponse, tags=["workflow"])

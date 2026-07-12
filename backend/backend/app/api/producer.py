@@ -11,7 +11,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from backend.app.core.database import get_db
-from backend.app.core.security import optional_user
+from backend.app.core.security import get_current_user
 from backend.app.models import (
     ProducerArtifact,
     ProducerChatMessage,
@@ -410,18 +410,25 @@ def _task_or_404(db: Session, task_id: str) -> ProducerTask:
     return task
 
 
+def _task_for_user(db: Session, task_id: str, user_id: int) -> ProducerTask:
+    task = _task_or_404(db, task_id)
+    if task.user_id != user_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Producer task not found")
+    return task
+
+
 @router.post("/task")
 def create_task(
     payload: ProducerTaskRequest,
     db: Session = Depends(get_db),
-    current_user: User | None = Depends(optional_user),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
     task_id = uuid4().hex
     topic = payload.topic.strip() or "通用学习主题"
     requested_types = _normalize_types(payload.types)
     task = ProducerTask(
         task_id=task_id,
-        user_id=current_user.id if current_user else None,
+        user_id=current_user.id,
         topic=topic,
         requirement=payload.requirement,
         task_type=payload.task_type,
@@ -458,21 +465,59 @@ def create_task(
     }
 
 
+@router.get("/tasks")
+def list_tasks(
+    limit: int = Query(default=20, ge=1, le=100),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    rows = (
+        db.query(ProducerTask)
+        .filter(ProducerTask.user_id == current_user.id)
+        .order_by(ProducerTask.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+    items = [
+        {
+            "task_id": task.task_id,
+            "topic": task.topic,
+            "requirement": task.requirement or "",
+            "status": task.status,
+            "progress": task.progress,
+            "created_at": task.created_at.isoformat() if task.created_at else None,
+            "updated_at": task.updated_at.isoformat() if task.updated_at else None,
+            "error_message": task.error_message,
+        }
+        for task in rows
+    ]
+    return {"items": items, "total": len(items)}
+
+
 @router.get("/task/{task_id}")
-def get_task(task_id: str, db: Session = Depends(get_db)) -> dict:
-    task = _task_or_404(db, task_id)
+def get_task(
+    task_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    task = _task_for_user(db, task_id, current_user.id)
     return {
         "task_id": task.task_id,
         "status": task.status,
         "progress": task.progress,
+        "error_message": task.error_message,
         "created_at": task.created_at.isoformat() if task.created_at else None,
         "updated_at": task.updated_at.isoformat() if task.updated_at else None,
     }
 
 
 @router.get("/result/{task_id}")
-def get_task_result(task_id: str, db: Session = Depends(get_db)) -> dict:
-    task = _task_or_404(db, task_id)
+def get_task_result(
+    task_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    task = _task_for_user(db, task_id, current_user.id)
     return {
         "task_id": task.task_id,
         "status": task.status,

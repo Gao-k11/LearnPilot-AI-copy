@@ -107,6 +107,7 @@ class TutorAskResponse(BaseModel):
     answer: str
     hints: list[str]
     next_action: str
+    evidence: list[dict] = Field(default_factory=list)
 
 
 class EvaluationSubmitRequest(BaseModel):
@@ -123,9 +124,96 @@ class EvaluationSubmitResponse(BaseModel):
     evaluation_id: int | None = None
     mastery_score: float
     feedback: str
-    profile_update: dict
+    profile_update: dict = Field(default_factory=dict)
     path_adjustment: str | None = None
     updated_profile: dict | None = None
+
+
+class EvaluationQuestionOut(BaseModel):
+    id: int
+    type: str
+    stem: str
+    options: list[dict] = Field(default_factory=list)
+    knowledge_point: str | None = None
+    difficulty: float = 0.5
+
+
+class EvaluationStartResponse(BaseModel):
+    path_id: int | None = None
+    course_id: int | None = None
+    total: int
+    questions: list[EvaluationQuestionOut] = Field(default_factory=list)
+
+
+class EvaluationAnswerItem(BaseModel):
+    question_id: int = Field(gt=0)
+    answer: str
+    elapsed_seconds: int = Field(ge=0, default=0)
+
+
+class EvaluationSubmitAnswersRequest(BaseModel):
+    path_id: int | None = None
+    course_id: int | None = None
+    study_minutes: int = Field(ge=0, default=0)
+    answers: list[EvaluationAnswerItem] = Field(default_factory=list)
+    user_id: int | None = None
+    correct_count: int | None = Field(default=None, ge=0)
+    total_count: int | None = Field(default=None, gt=0)
+    completed_resource_count: int = Field(ge=0, default=0)
+
+
+class EvaluationWrongItem(BaseModel):
+    question_id: int
+    stem: str
+    user_answer: str
+    correct_answer: str
+    explanation: str = ""
+    knowledge_point: str | None = None
+
+
+class EvaluationSubmitDetailedResponse(BaseModel):
+    evaluation_id: int | None = None
+    score: float | None = None
+    accuracy: float | None = None
+    correct_count: int | None = None
+    total_count: int | None = None
+    mastery_score: float
+    feedback: str
+    wrong_items: list[EvaluationWrongItem] = Field(default_factory=list)
+    weak_points: list[str] = Field(default_factory=list)
+    path_adjustment: str | None = None
+    updated_profile: dict | None = None
+    profile_update: dict = Field(default_factory=dict)
+
+
+class EvaluationHistoryItem(BaseModel):
+    evaluation_id: int
+    path_id: int | None = None
+    score: float | None = None
+    accuracy: float | None = None
+    created_at: str | None = None
+    feedback: str
+
+
+class EvaluationHistoryResponse(BaseModel):
+    items: list[EvaluationHistoryItem] = Field(default_factory=list)
+    total: int = 0
+
+
+class EvaluationDetailResponse(BaseModel):
+    evaluation_id: int
+    path_id: int | None = None
+    score: float | None = None
+    accuracy: float | None = None
+    correct_count: int | None = None
+    total_count: int | None = None
+    mastery_score: float
+    feedback: str
+    wrong_items: list[EvaluationWrongItem] = Field(default_factory=list)
+    weak_points: list[str] = Field(default_factory=list)
+    path_adjustment: str | None = None
+    created_at: str | None = None
+    profile_update: dict = Field(default_factory=dict)
 
 
 class LearningStartRequest(BaseModel):

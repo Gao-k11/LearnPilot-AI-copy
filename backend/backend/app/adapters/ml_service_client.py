@@ -12,6 +12,16 @@ class MLServiceUnavailable(RuntimeError):
     pass
 
 
+class MLServiceHTTPError(MLServiceUnavailable):
+    def __init__(self, message: str, status_code: int | None = None) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+
+
+class MLServiceTimeout(MLServiceUnavailable):
+    pass
+
+
 class MLServiceClient:
     def __init__(self, base_url: str | None = None, timeout: float | None = None) -> None:
         settings = get_settings()
@@ -54,6 +64,15 @@ class MLServiceClient:
                     response = client.request(method, path, json=payload or {})
                 response.raise_for_status()
                 data = response.json()
+        except httpx.TimeoutException as exc:
+            raise MLServiceTimeout(f"ML service timeout on {method} {path}") from exc
+        except httpx.HTTPStatusError as exc:
+            status_code = exc.response.status_code
+            detail = exc.response.text[:300] if exc.response is not None else ""
+            raise MLServiceHTTPError(
+                f"ML service HTTP {status_code} on {method} {path}: {detail}",
+                status_code=status_code,
+            ) from exc
         except Exception as exc:
             raise MLServiceUnavailable(f"ML service request failed: {exc}") from exc
 

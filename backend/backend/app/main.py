@@ -13,6 +13,7 @@ from backend.app.api.profile_builder import router as profile_builder_router
 from backend.app.api.profile import router as profile_router
 from backend.app.api.producer import router as producer_router
 from backend.app.api.path import router as path_router
+from backend.app.api.evaluation import router as evaluation_router
 from backend.app.api.ml import router as ml_router
 from backend.app.api.resources import router as resources_router
 from backend.app.api.user import router as user_router
@@ -56,6 +57,7 @@ app.include_router(profile_builder_router)
 app.include_router(producer_router)
 app.include_router(profile_router)
 app.include_router(path_router)
+app.include_router(evaluation_router)
 app.include_router(ml_router)
 
 try:

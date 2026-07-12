@@ -4,6 +4,7 @@ from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, JSON, Stri
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.core.database import Base
+from backend.app.core.json_codec import UnicodeJSONType
 
 
 class TimestampMixin:
@@ -104,8 +105,8 @@ class StudentProfile(TimestampMixin, Base):
     cognitive_style: Mapped[str | None] = mapped_column(String(128))
     knowledge_level: Mapped[str | None] = mapped_column(String(64))
     raw_text: Mapped[str] = mapped_column(Text, nullable=False)
-    mastery: Mapped[dict | None] = mapped_column(JSON)
-    weak_points_json: Mapped[list | None] = mapped_column(JSON)
+    mastery: Mapped[dict | None] = mapped_column(UnicodeJSONType)
+    weak_points_json: Mapped[list | None] = mapped_column(UnicodeJSONType)
     engagement_score: Mapped[float | None] = mapped_column(Float)
     forgetting_risk: Mapped[float | None] = mapped_column(Float)
     learning_stage: Mapped[str | None] = mapped_column(String(64))
@@ -119,7 +120,7 @@ class ProfileBuilderSession(TimestampMixin, Base):
     user_id: Mapped[int | None] = mapped_column(ForeignKey("user.id"))
     current_step: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     status: Mapped[str] = mapped_column(String(32), default="active", nullable=False)
-    result_profile_json: Mapped[dict | None] = mapped_column(JSON)
+    result_profile_json: Mapped[dict | None] = mapped_column(UnicodeJSONType)
 
 
 class ProfileBuilderMessage(Base):

@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from backend.app.core.database import get_db
-from backend.app.core.security import create_access_token, get_current_user, hash_password, verify_password
+from backend.app.core.security import create_access_token, get_current_user, hash_password, normalize_role, verify_password
 from backend.app.models import User
 
 
@@ -24,10 +24,16 @@ class AuthCompatLoginRequest(BaseModel):
 
 
 def user_payload(user: User) -> dict:
-    is_admin = bool(user.is_admin) or user.role == "admin" or user.username == "admin"
+    is_admin = (
+        bool(user.is_admin)
+        or normalize_role(user.role) == "admin"
+        or user.username == "admin"
+    )
+    nickname = user.nickname or user.display_name or user.username
     return {
         "id": user.id,
         "username": user.username,
+        "nickname": nickname,
         "email": user.email or "",
         "isAdmin": is_admin,
         "is_admin": is_admin,

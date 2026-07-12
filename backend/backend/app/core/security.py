@@ -17,8 +17,21 @@ from backend.app.core.database import get_db
 from backend.app.models import User
 
 
-ROLE_ORDER = {"student": 1, "teacher": 2, "admin": 3}
+ROLE_ORDER = {"student": 1, "user": 1, "teacher": 2, "admin": 3}
 bearer_scheme = HTTPBearer(auto_error=False)
+
+
+def normalize_role(role: str | None) -> str:
+    if role is None:
+        return ""
+    return str(role).strip().lower()
+
+
+def is_admin_user(user: User) -> bool:
+    role = normalize_role(user.role)
+    if not role and not user.is_admin and user.username != "admin":
+        return False
+    return bool(user.is_admin) or role == "admin" or user.username == "admin"
 
 
 @dataclass(frozen=True)
@@ -92,14 +105,26 @@ def get_current_user(
 
 
 def require_role(*roles: str):
-    min_rank = min(ROLE_ORDER[role] for role in roles)
+    normalized_roles = [normalize_role(role) for role in roles]
+    min_rank = min(ROLE_ORDER.get(role, 0) for role in normalized_roles)
 
     def dependency(user: User = Depends(get_current_user)) -> User:
-        if ROLE_ORDER.get(user.role, 0) < min_rank:
+        if is_admin_user(user) and "admin" in normalized_roles:
+            return user
+        user_rank = ROLE_ORDER.get(normalize_role(user.role), 0)
+        if user_rank < min_rank:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
         return user
 
     return dependency
+
+
+def get_current_admin(user: User = Depends(get_current_user)) -> User:
+    if (user.status or "active") == "deleted":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin account is disabled")
+    if not is_admin_user(user):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
+    return user
 
 
 def optional_user(

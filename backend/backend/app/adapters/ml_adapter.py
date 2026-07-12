@@ -1,11 +1,20 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from sqlalchemy.orm import Session
 
-from backend.app.adapters.ml_service_client import MLServiceClient, MLServiceUnavailable
+from backend.app.adapters.ml_service_client import (
+    MLServiceClient,
+    MLServiceHTTPError,
+    MLServiceTimeout,
+    MLServiceUnavailable,
+)
 from backend.app.models import Course, CourseResource, FeedbackEvent, KnowledgePoint, StudentProfile, StudentWeakness
+
+
+logger = logging.getLogger("learnpilot.ml_adapter")
 
 
 STYLE_MAP = {
@@ -71,6 +80,75 @@ class MLAdapter:
             "resources": resources,
             "knowledge_graph": self._knowledge_graph(knowledge_points),
             "course_context": self._course_context(db, course_id, requirement),
+        }
+
+    def build_path_payload(
+        self,
+        db: Session,
+        user_id: int,
+        profile: dict[str, Any],
+        course_id: int | None = None,
+        top_k: int = 6,
+    ) -> dict[str, Any]:
+        db_profile = self._latest_profile(db, user_id)
+        weaknesses = self._latest_weaknesses(db, user_id, db_profile.id if db_profile else None)
+
+        weak_points = list(profile.get("weak_points") or [])
+        if not weak_points and db_profile and db_profile.weak_points_json:
+            weak_points = list(db_profile.weak_points_json or [])
+        if not weak_points:
+            weak_points = [item.knowledge_point for item in weaknesses if item.knowledge_point]
+
+        goal = (
+            profile.get("goal")
+            or (db_profile.goal if db_profile else "")
+            or "提升课程掌握度"
+        )
+        course_name = profile.get("course") or (db_profile.course if db_profile else "") or ""
+        requirement = goal
+
+        diagnostics = self._diagnostics_from_weaknesses(weaknesses)
+        if not diagnostics and weak_points:
+            diagnostics = {
+                point: round(max(0.35, 0.85 - index * 0.08), 4)
+                for index, point in enumerate(weak_points)
+            }
+        if not diagnostics:
+            knowledge_points = self._knowledge_points(db, course_id)
+            diagnostics = self._diagnostics_from_requirement(requirement, knowledge_points)
+
+        mastery = profile.get("mastery")
+        if isinstance(mastery, dict) and mastery:
+            previous_mastery = {
+                str(point): round(max(0.0, min(1.0, float(score))), 4)
+                for point, score in mastery.items()
+                if isinstance(score, int | float)
+            }
+        elif db_profile and isinstance(db_profile.mastery, dict) and db_profile.mastery:
+            previous_mastery = self._diagnostics_from_profile(db_profile)
+        else:
+            previous_mastery = dict(diagnostics)
+
+        goals = [goal] if goal else []
+        knowledge_points = self._knowledge_points(db, course_id)
+
+        return {
+            "student": {
+                "student_id": str(user_id),
+                "diagnostics": diagnostics,
+                "goals": goals,
+                "preferred_styles": self._preferred_styles_from_profile(profile, db_profile),
+                "events": [],
+                "previous_mastery": previous_mastery,
+            },
+            "top_k": top_k,
+            "resources": self._resources(db, course_id, knowledge_points),
+            "knowledge_graph": self._knowledge_graph(knowledge_points),
+            "course_context": {
+                "course_id": course_id,
+                "course_name": course_name or None,
+                "requirement": requirement,
+            },
         }
 
     def recommend_learning(
@@ -167,11 +245,42 @@ class MLAdapter:
             self.last_fallback_reason = str(exc)
             return None
 
-    def plan_path(self, payload: dict[str, Any]) -> dict[str, Any] | None:
+    def plan_path(
+        self,
+        db: Session,
+        user_id: int,
+        profile: dict[str, Any],
+        course_id: int | None = None,
+    ) -> dict[str, Any] | None:
+        payload = self.build_path_payload(db, user_id, profile, course_id=course_id)
         try:
-            return self.client.path(payload)
+            data = self.client.path(payload)
+            self.last_fallback_reason = None
+            logger.info(
+                "ML path success user_id=%s course_id=%s top_k=%s",
+                user_id,
+                course_id,
+                payload.get("top_k"),
+            )
+            return data
+        except MLServiceTimeout as exc:
+            self.last_fallback_reason = str(exc)
+            logger.warning("ML path timeout user_id=%s: %s", user_id, exc)
+            return None
+        except MLServiceHTTPError as exc:
+            self.last_fallback_reason = str(exc)
+            if exc.status_code == 422:
+                logger.warning("ML path 422 user_id=%s: %s", user_id, exc)
+            else:
+                logger.warning("ML path HTTP error user_id=%s: %s", user_id, exc)
+            return None
+        except MLServiceUnavailable as exc:
+            self.last_fallback_reason = str(exc)
+            logger.warning("ML path unavailable user_id=%s: %s", user_id, exc)
+            return None
         except Exception as exc:
             self.last_fallback_reason = str(exc)
+            logger.warning("ML path failed user_id=%s: %s", user_id, exc)
             return None
 
     def evaluate_mastery(
@@ -181,20 +290,12 @@ class MLAdapter:
         completed_resource_count: int,
         study_minutes: int,
     ) -> dict:
-        payload = {
-            "correct_count": correct_count,
-            "total_count": total_count,
-            "completed_resource_count": completed_resource_count,
-            "study_minutes": study_minutes,
-        }
-        try:
-            data = self.client.feedback(payload)
-            normalized = self._normalize_evaluation(data)
-            if normalized:
-                return normalized
-        except Exception as exc:
-            self.last_fallback_reason = str(exc)
-        return self._mock_evaluate_mastery(correct_count, total_count, completed_resource_count, study_minutes)
+        return self._mock_evaluate_mastery(
+            correct_count,
+            total_count,
+            completed_resource_count,
+            study_minutes,
+        )
 
     def _diagnostics_from_profile(self, profile: StudentProfile | None) -> dict[str, float]:
         if profile and isinstance(profile.mastery, dict):
@@ -314,6 +415,26 @@ class MLAdapter:
             ]
             if value
         ).lower()
+        return self._preferred_styles_from_text(text)
+
+    def _preferred_styles_from_profile(
+        self,
+        profile: dict[str, Any],
+        db_profile: StudentProfile | None,
+    ) -> list[str]:
+        text = " ".join(
+            value
+            for value in [
+                profile.get("preference"),
+                profile.get("cognitive_style"),
+                db_profile.preference if db_profile else None,
+                db_profile.cognitive_style if db_profile else None,
+            ]
+            if value
+        ).lower()
+        return self._preferred_styles_from_text(text)
+
+    def _preferred_styles_from_text(self, text: str) -> list[str]:
         styles = []
         if any(token in text for token in ["video", "视频", "讲解"]):
             styles.append("video")
@@ -323,7 +444,7 @@ class MLAdapter:
             styles.append("example")
         if any(token in text for token in ["project", "项目", "实战"]):
             styles.append("project")
-        if any(token in text for token in ["text", "阅读", "文档"]):
+        if any(token in text for token in ["text", "阅读", "文档", "讲义"]):
             styles.append("text")
         return styles or DEFAULT_STYLES
 

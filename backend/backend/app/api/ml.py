@@ -3,16 +3,21 @@ from __future__ import annotations
 import re
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
-from backend.app.api.path import PathGenerateRequest, generate_path
+from backend.app.api.path import _generate_learning_path
 from backend.app.api.profile import latest_profile, profile_payload, upsert_profile
-from backend.app.api.profile_builder import _build_profile
+from backend.app.api.profile_builder import (
+    _build_profile,
+    _extract_course,
+    _extract_grade,
+    _extract_major,
+)
 from backend.app.core.database import get_db
 from backend.app.core.security import optional_user
-from backend.app.models import MLProfileAnswer, User
+from backend.app.models import MLProfileAnswer, ProfileBuilderSession, User
 
 
 router = APIRouter(prefix="/api/ml", tags=["ml"])
@@ -126,10 +131,207 @@ class MLLearningPathRequest(BaseModel):
 def _resolved_user_id(
     current_user: User | None,
     requested_user_id: str | int | None,
-) -> int:
+) -> int | None:
     if current_user is not None:
         return current_user.id
-    return int(requested_user_id or 1)
+    if requested_user_id is None or requested_user_id == "":
+        return None
+    return int(requested_user_id)
+
+
+def _normalize_session_id(session_id: str | None) -> str:
+    return (session_id or "").strip()
+
+
+def _get_session_by_id(db: Session, session_id: str) -> ProfileBuilderSession | None:
+    return (
+        db.query(ProfileBuilderSession)
+        .filter(ProfileBuilderSession.session_id == session_id)
+        .first()
+    )
+
+
+def _ensure_session_access(session: ProfileBuilderSession, current_user: User | None) -> None:
+    if current_user is None or session.user_id is None:
+        return
+    if session.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Session access denied")
+
+
+def _get_or_create_ml_session(
+    db: Session,
+    session_id: str | None,
+    user_id: int | None,
+    current_user: User | None,
+) -> ProfileBuilderSession:
+    normalized = _normalize_session_id(session_id)
+    if normalized:
+        session = _get_session_by_id(db, normalized)
+        if session is None:
+            has_answers = (
+                db.query(MLProfileAnswer.id)
+                .filter(MLProfileAnswer.session_id == normalized)
+                .first()
+            )
+            if has_answers is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Profile session not found",
+                )
+            session = ProfileBuilderSession(
+                session_id=normalized,
+                user_id=user_id,
+                current_step=1,
+                status="active",
+            )
+            db.add(session)
+            db.flush()
+        _ensure_session_access(session, current_user)
+        if session.user_id is None and user_id is not None:
+            session.user_id = user_id
+        return session
+
+    new_session_id = uuid4().hex
+    session = ProfileBuilderSession(
+        session_id=new_session_id,
+        user_id=user_id,
+        current_step=1,
+        status="active",
+    )
+    db.add(session)
+    db.flush()
+    return session
+
+
+def _resolve_generate_session(
+    db: Session,
+    session_id: str | None,
+    current_user: User | None,
+    user_id: int | None,
+) -> tuple[str | None, ProfileBuilderSession | None]:
+    normalized = _normalize_session_id(session_id)
+    if normalized:
+        session = _get_session_by_id(db, normalized)
+        if session is None:
+            has_answers = (
+                db.query(MLProfileAnswer.id)
+                .filter(MLProfileAnswer.session_id == normalized)
+                .first()
+            )
+            if has_answers is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Profile session not found",
+                )
+            session = ProfileBuilderSession(
+                session_id=normalized,
+                user_id=user_id,
+                current_step=1,
+                status="active",
+            )
+            db.add(session)
+            db.flush()
+        _ensure_session_access(session, current_user)
+        if session.user_id is None and user_id is not None:
+            session.user_id = user_id
+        return normalized, session
+
+    if current_user is not None:
+        session = (
+            db.query(ProfileBuilderSession)
+            .filter(
+                ProfileBuilderSession.user_id == current_user.id,
+                ProfileBuilderSession.status == "active",
+            )
+            .order_by(ProfileBuilderSession.id.desc())
+            .first()
+        )
+        if session is not None:
+            return session.session_id, session
+
+    return None, None
+
+
+def _upsert_ml_answer(
+    db: Session,
+    session_id: str,
+    user_id: int | None,
+    item: AnswerItem,
+) -> None:
+    if not item.answer.strip():
+        return
+
+    question_id = item.question_id or "unknown"
+    existing = (
+        db.query(MLProfileAnswer)
+        .filter(
+            MLProfileAnswer.session_id == session_id,
+            MLProfileAnswer.question_id == question_id,
+        )
+        .order_by(MLProfileAnswer.id.desc())
+        .first()
+    )
+    if existing is not None:
+        existing.answer = item.answer.strip()
+        existing.question = item.question
+        if user_id is not None:
+            existing.user_id = user_id
+        return
+
+    db.add(
+        MLProfileAnswer(
+            user_id=user_id,
+            session_id=session_id,
+            question_id=question_id,
+            question=item.question,
+            answer=item.answer.strip(),
+        )
+    )
+
+
+def _load_session_answers(db: Session, session_id: str) -> list[AnswerItem]:
+    rows = (
+        db.query(MLProfileAnswer)
+        .filter(MLProfileAnswer.session_id == session_id)
+        .order_by(MLProfileAnswer.id.asc())
+        .all()
+    )
+    merged: dict[str, AnswerItem] = {}
+    for row in rows:
+        merged[row.question_id] = AnswerItem(
+            question_id=row.question_id,
+            question=row.question or "",
+            answer=row.answer,
+        )
+    return list(merged.values())
+
+
+def _merge_answer_items(
+    primary: list[AnswerItem],
+    supplemental: list[AnswerItem],
+) -> list[AnswerItem]:
+    """Merge answers; primary items win over supplemental for the same question_id."""
+    merged: dict[str, AnswerItem] = {}
+    for item in supplemental:
+        question_id = (item.question_id or "").strip()
+        if question_id and item.answer.strip():
+            merged[question_id] = item
+    for item in primary:
+        question_id = (item.question_id or "").strip()
+        if question_id and item.answer.strip():
+            merged[question_id] = item
+    return list(merged.values())
+
+
+def _answers_for_profile_generation(
+    db: Session,
+    session_id: str | None,
+    request_answers: list[AnswerItem],
+) -> list[AnswerItem]:
+    if session_id:
+        db_answers = _load_session_answers(db, session_id)
+        return _merge_answer_items(db_answers, request_answers)
+    return list(request_answers)
 
 
 def _save_answers(
@@ -139,17 +341,7 @@ def _save_answers(
     answers: list[AnswerItem],
 ) -> None:
     for item in answers:
-        if not item.answer.strip():
-            continue
-        db.add(
-            MLProfileAnswer(
-                user_id=user_id,
-                session_id=session_id,
-                question_id=item.question_id or "unknown",
-                question=item.question,
-                answer=item.answer.strip(),
-            )
-        )
+        _upsert_ml_answer(db, session_id, user_id, item)
 
 
 def _answers_for_builder(answers: list[AnswerItem]) -> list[str]:
@@ -304,6 +496,44 @@ def _dashboard_from_answers(profile: dict, answers: list[AnswerItem]) -> dict:
     }
 
 
+_GRADE_PART_PATTERN = re.compile(
+    r"^(大[一二三四五]|研[一二三]|博士[一二三四五六]|高[一二三]|[一二三四五六七八九]年级)$"
+)
+
+
+def _enrich_major_grade_course(answer: str, profile: dict) -> None:
+    major = _extract_major(answer) or profile.get("major") or ""
+    grade = _extract_grade(answer) or profile.get("grade") or ""
+    course = _extract_course(answer) or profile.get("course") or ""
+
+    parts = [part.strip() for part in re.split(r"[，,;；]", answer) if part.strip()]
+    if parts:
+        grade_index = next(
+            (index for index, part in enumerate(parts) if _GRADE_PART_PATTERN.match(part)),
+            None,
+        )
+        if grade_index is not None:
+            if not major and grade_index > 0:
+                major = parts[grade_index - 1]
+            if not grade:
+                grade = parts[grade_index]
+            if not course and grade_index < len(parts) - 1:
+                course = parts[grade_index + 1]
+        elif len(parts) >= 3:
+            major = major or parts[0]
+            grade = grade or parts[1]
+            course = course or parts[2]
+        elif len(parts) == 2:
+            major = major or parts[0]
+            course = course or parts[1]
+
+    profile["major"] = major
+    profile["grade"] = grade
+    profile["course"] = course
+    if not profile["major"] and not profile["grade"] and not profile["course"]:
+        profile["course"] = answer
+
+
 def _profile_from_answers(answers: list[AnswerItem]) -> dict:
     profile = _build_profile(_answers_for_builder(answers))
     for item in answers:
@@ -312,7 +542,9 @@ def _profile_from_answers(answers: list[AnswerItem]) -> dict:
         if not answer:
             continue
 
-        if question_id == "major":
+        if question_id in {"major_grade_course", "basic_info"}:
+            _enrich_major_grade_course(answer, profile)
+        elif question_id == "major":
             profile["major"] = answer
         elif question_id == "grade":
             profile["grade"] = answer
@@ -327,7 +559,11 @@ def _profile_from_answers(answers: list[AnswerItem]) -> dict:
         elif question_id in {"style", "cognitive_style"}:
             profile["cognitive_style"] = _normalize_cognitive_style(answer)
         elif question_id in {"foundation", "knowledge_level"}:
-            profile["knowledge_level"] = _knowledge_level_from_foundation(answer)
+            normalized = answer.strip().lower()
+            if normalized in {"beginner", "foundation", "intermediate", "advanced", "basic", "unknown"}:
+                profile["knowledge_level"] = normalized
+            else:
+                profile["knowledge_level"] = _knowledge_level_from_foundation(answer)
 
     profile["weak_points"] = list(profile.get("weak_points") or [])
     profile["preference"] = profile.get("preference") or "混合资源"
@@ -335,6 +571,8 @@ def _profile_from_answers(answers: list[AnswerItem]) -> dict:
         profile["cognitive_style"] = "综合型"
     profile["cognitive_style"] = profile.get("cognitive_style") or "循序渐进型"
     profile["knowledge_level"] = profile.get("knowledge_level") or "unknown"
+    if not profile.get("course") and profile.get("major"):
+        profile["course"] = profile["major"]
     return profile
 
 
@@ -345,6 +583,8 @@ def get_current_ml_profile(
     current_user: User | None = Depends(optional_user),
 ) -> dict:
     user_id = _resolved_user_id(current_user, userId)
+    if user_id is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
     return {
         "userId": str(user_id),
         "profile": profile_payload(latest_profile(db, user_id)),
@@ -362,15 +602,15 @@ def save_ml_profile_answer(
     db: Session = Depends(get_db),
     current_user: User | None = Depends(optional_user),
 ) -> dict:
-    session_id = payload.session_id or uuid4().hex
     user_id = _resolved_user_id(current_user, payload.userId)
+    session = _get_or_create_ml_session(db, payload.session_id, user_id, current_user)
+    session_id = session.session_id
     main_answer = AnswerItem(
         question_id=payload.question_id,
         question=payload.question,
         answer=payload.answer,
     )
-    items = [main_answer, *payload.answers]
-    _save_answers(db, session_id, user_id, items)
+    _upsert_ml_answer(db, session_id, user_id, main_answer)
     db.commit()
     return {
         "success": True,
@@ -387,14 +627,35 @@ def generate_ml_profile(
     current_user: User | None = Depends(optional_user),
 ) -> dict:
     user_id = _resolved_user_id(current_user, payload.userId)
-    session_id = payload.session_id or uuid4().hex
-    profile = _profile_from_answers(payload.answers)
+    session_id, session = _resolve_generate_session(db, payload.session_id, current_user, user_id)
+
+    request_answers = list(payload.answers or [])
+    answers = _answers_for_profile_generation(db, session_id, request_answers)
+
+    if not answers:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No profile answers found for generation",
+        )
+
+    if user_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required to generate profile",
+        )
+
+    profile = _profile_from_answers(answers)
     profile["preference"] = profile["preference"] or "混合资源"
     profile["cognitive_style"] = profile["cognitive_style"] or "循序渐进型"
-    dashboard = _dashboard_from_answers(profile, payload.answers)
+    dashboard = _dashboard_from_answers(profile, answers)
     try:
-        _save_answers(db, session_id, user_id, payload.answers)
+        if session_id:
+            _save_answers(db, session_id, user_id, answers)
         db_profile = upsert_profile(db, user_id, profile)
+        if session is not None:
+            session.status = "completed"
+            session.result_profile_json = profile
+            session.current_step = len(QUESTIONS)
         db.commit()
         db.refresh(db_profile)
     except Exception:
@@ -403,6 +664,7 @@ def generate_ml_profile(
     return {
         "success": True,
         "userId": str(user_id),
+        "session_id": session_id or "",
         "profile": {
             key: profile[key]
             for key in (
@@ -427,10 +689,9 @@ def generate_ml_learning_path(
     current_user: User | None = Depends(optional_user),
 ) -> dict:
     user_id = _resolved_user_id(current_user, payload.userId)
-    result = generate_path(
-        PathGenerateRequest(userId=user_id, profile=payload.profile),
-        db,
-    )
+    if user_id is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
+    result = _generate_learning_path(db, user_id, payload.profile)
     result["pathId"] = str(result["pathId"])
     result["path_id"] = str(result["path_id"])
     return result
